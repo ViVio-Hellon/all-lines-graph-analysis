@@ -114,3 +114,21 @@
   .gcard { position: static !important; break-inside: avoid; box-shadow: none; border-color: #ccc; }
   .gcard__body { overflow: visible; }
 }
+
+/* 表示のしかた・ライン切り替え */
+.view { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.view .field__label { margin-right: 4px; }
+.seg { border: 1px solid var(--line); background: #fff; padding: 3px 12px; font: inherit; font-size: 13px; cursor: pointer; border-radius: 6px; }
+.seg[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ltabs { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; margin-top: 8px; border-bottom: 2px solid var(--line); }
+.ltab { border: 0; background: transparent; padding: 6px 14px; font: inherit; font-weight: 700; cursor: pointer; color: var(--muted);
+  display: inline-flex; gap: 6px; align-items: center; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.ltab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.ltabs .lead { margin-left: 8px; font-size: 12px; }
+.badge--pin { background: #e4edfa; color: #1f5fbf; }
+.gcard__head > .chip__dot { flex-shrink: 0; }
+/* グラフ追加の手順 */
+.astep { display: flex; gap: 8px; align-items: center; margin: 10px 0 6px; }
+.astep__n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; }
+.addline { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.addline.is-common > :not(.own__head) { opacity: .45; pointer-events: none; }

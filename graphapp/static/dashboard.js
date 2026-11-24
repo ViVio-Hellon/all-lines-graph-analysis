@@ -73,14 +73,18 @@ function periodText(p) {
 
 /* ------------------------------------------------------------ 構成 */
 function defaultConfig() {
+  // 要件の概念図(L-1 生産重量 / L-2 稼働率 / L-3 停止理由の内訳 / L-1 生産枚数)と同じ並べ方で始める
+  const L = META.lines;
+  const pin = (g, i) => { if (L.length) g.own.lines = [L[Math.min(i, L.length - 1)]]; return g; };
   return {
     version: 1,
-    common: { all_lines: true, lines: [], period: { preset: "this_month", start: "", end: "" }, grain: "day", shift: "" },
+    common: { all_lines: true, lines: [], period: { preset: "this_month", start: "", end: "" }, grain: "day", shift: "",
+              switch: false, current: "" },
     charts: [
-      newChart("weight", "bar", 0, 0, 6, 5),
-      newChart("rate", "line", 6, 0, 6, 5),
-      newChart("stop_reason_min", "pie", 0, 5, 6, 5),
-      newChart("sheets", "stacked", 6, 5, 6, 5),
+      pin(newChart("weight", "bar", 0, 0, 4, 5), 0),
+      pin(newChart("rate", "line", 4, 0, 4, 5), 1),
+      pin(newChart("stop_reason_min", "pie", 8, 0, 4, 5), 2),
+      pin(newChart("sheets", "stacked", 0, 5, 4, 5), 0),
     ],
   };
 }
@@ -90,9 +94,22 @@ function newChart(metric, chart, x, y, w, h) {
 }
 const C = () => DASH.config;
 const metricOf = (key) => META.metrics.find((m) => m.key === key);
+/* 共通条件で選んだライン(切り替え表示なら、いま選んでいる1本だけ) */
+function commonLines() {
+  const c = C().common;
+  const picked = c.all_lines ? META.lines : c.lines;
+  if (!c.switch) return picked;
+  return picked.includes(c.current) ? [c.current] : picked.slice(0, 1);
+}
+/* グラフの名前。ラインを指定したカードは「L-1 生産重量」のようにラインを頭に付ける */
+function titleOf(g) {
+  if (g.title) return g.title;
+  const label = metricOf(g.metric).label;
+  return g.own.lines && g.own.lines.length === 1 ? `${g.own.lines[0]} ${label}` : label;
+}
 function conditions(g) {
   const c = C().common;
-  const lines = g.own.lines || (c.all_lines ? META.lines : c.lines);
+  const lines = g.own.lines || commonLines();
   return {
     lines,
     period: g.own.period || c.period,
@@ -103,7 +120,7 @@ function conditions(g) {
 function specOf(g) {
   const k = conditions(g);
   const r = resolvePeriod(k.period);
-  return { metric: g.metric, chart: g.chart, lines: k.lines, start: r.start, end: r.end, grain: k.grain, shift: k.shift, title: g.title || metricOf(g.metric).label };
+  return { metric: g.metric, chart: g.chart, lines: k.lines, start: r.start, end: r.end, grain: k.grain, shift: k.shift, title: titleOf(g) };
 }
 function markDirty() {
   const dirty = JSON.stringify(C()) !== SAVED;
@@ -134,6 +151,13 @@ function fillSelect(sel, pairs, value) {
 function renderCommon() {
   const c = C().common;
   linePicker($("c-lines"), c.lines, c.all_lines, (all, picked) => { c.all_lines = all; c.lines = all ? [] : picked; changed(true); }, true);
+  document.querySelectorAll("#c-view [data-view]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.view === "switch") === !!c.switch)));
+  const picked = c.all_lines ? META.lines : c.lines;
+  const now = commonLines()[0];
+  $("c-switch").hidden = !c.switch;
+  $("c-switch").innerHTML = picked.map((l) => `<button class="ltab" type="button" role="tab" data-line="${esc(l)}" aria-selected="${l === now}">`
+      + `<span class="chip__dot" style="background:${lineColor(l)}"></span>${esc(l)}</button>`).join("")
+    + (picked.length ? `<span class="lead">← → キーでも切り替えられます。ラインを指定したカードは切り替わりません</span>` : `<span class="lead">ラインを選んでください</span>`);
   fillSelect($("c-preset"), PRESETS, c.period.preset);
   const r = resolvePeriod(c.period);
   $("c-start").value = r.start; $("c-end").value = r.end;
@@ -142,6 +166,22 @@ function renderCommon() {
 }
 $("c-preset").onchange = () => { const p = C().common.period; p.preset = $("c-preset").value; if (p.preset === "custom") Object.assign(p, resolvePeriod({ preset: "this_month" }), { preset: "custom" }); changed(true); };
 ["c-start", "c-end"].forEach((id) => { $(id).onchange = () => { const p = C().common.period; p.preset = "custom"; p.start = $("c-start").value; p.end = $("c-end").value; changed(true); }; });
+$("c-view").onclick = (e) => {
+  const b = e.target.closest("[data-view]"); if (!b) return;
+  const c = C().common; c.switch = b.dataset.view === "switch";
+  if (c.switch && !c.current) c.current = commonLines()[0] || "";
+  changed(true);
+};
+$("c-switch").onclick = (e) => { const b = e.target.closest("[data-line]"); if (b) { C().common.current = b.dataset.line; changed(true); } };
+document.addEventListener("keydown", (e) => {
+  const c = DASH && C().common;
+  if (!c || !c.switch || !["ArrowLeft", "ArrowRight"].includes(e.key) || e.target.closest("input, select, textarea, .gcard, .drawer, .modal")) return;
+  const picked = c.all_lines ? META.lines : c.lines;
+  const i = picked.indexOf(commonLines()[0]);
+  if (i < 0) return;
+  c.current = picked[(i + (e.key === "ArrowRight" ? 1 : picked.length - 1)) % picked.length];
+  changed(true);
+});
 $("c-grain").onchange = () => { C().common.grain = $("c-grain").value; changed(true); };
 $("c-shift").onchange = () => { C().common.shift = $("c-shift").value; changed(true); };
 
@@ -183,8 +223,13 @@ function boardHeight() {
 }
 
 function tagText(g) {
-  const own = Object.keys(g.own).map((k) => ({ lines: "ライン", period: "期間", grain: "単位", shift: "直" }[k]));
-  return own.length ? `<span class="badge badge--todo" title="共通条件ではなく、このグラフだけの条件です">個別: ${own.join("・")}</span>` : "";
+  const own = Object.keys(g.own).filter((k) => k !== "lines").map((k) => ({ period: "期間", grain: "単位", shift: "直" }[k]));
+  const pinned = g.own.lines ? `<span class="badge badge--pin" title="このカードはラインを指定しています(共通条件や切り替えでは変わりません)">ライン指定</span>`
+    : C().common.switch ? `<span class="badge badge--todo" title="上のライン切り替えに付いてきます">切り替え表示</span>` : "";
+  return pinned + (own.length ? `<span class="badge badge--todo" title="共通条件ではなく、このグラフだけの条件です">個別: ${own.join("・")}</span>` : "");
+}
+function headDot(g) {
+  return g.own.lines && g.own.lines.length === 1 ? `<span class="chip__dot" style="background:${lineColor(g.own.lines[0])}"></span>` : "";
 }
 function renderBoard() {
   const board = $("board");
@@ -197,7 +242,7 @@ function renderBoard() {
     card.className = "gcard" + (ACTIVE === g.id ? " is-active" : "");
     card.dataset.id = g.id;
     card.innerHTML = `<div class="gcard__head" tabindex="0" title="つかんで動かす(矢印キーでも動きます。Shift+矢印で大きさ)">
-        <span class="gcard__title">${esc(g.title || m.label)}</span>
+        ${headDot(g)}<span class="gcard__title">${esc(titleOf(g))}</span>
         <span class="gcard__tags"><span class="badge">${esc(META.charts[g.chart])}</span>${tagText(g)}</span>
         <span class="gcard__tools">
           <button class="icon" type="button" data-act="edit" aria-label="グラフの設定">設定</button>
@@ -221,7 +266,7 @@ function bindCard(card, g) {
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "edit") openDrawer(g.id);
     if (act === "png") savePng(card, g);
-    if (act === "del" && confirm(`「${g.title || metricOf(g.metric).label}」のグラフを消します。よろしいですか？`)) {
+    if (act === "del" && confirm(`「${titleOf(g)}」のグラフを消します。よろしいですか？`)) {
       C().charts = C().charts.filter((x) => x !== g);
       if (ACTIVE === g.id) closeDrawer();
       changed(false);
@@ -336,7 +381,7 @@ async function loadCard(card, g) {
       colors: colorsFor(g, it.line, it.result), legend: g.style.legend, showValues: g.style.labels,
       yMin: typeof g.style.y_min === "number" ? g.style.y_min : undefined,
       yMax: typeof g.style.y_max === "number" ? g.style.y_max : undefined, scaleMax,
-      title: `${it.line} ${g.title || m.label}`,
+      title: `${it.line} ${titleOf(g)}`,
     });
   });
   const foot = card.querySelector(".gcard__foot");
@@ -359,8 +404,12 @@ window.addEventListener("beforeprint", () => {
 });
 window.addEventListener("afterprint", () => renderBoard());
 
-/* ------------------------------------------------------------ グラフ追加 */
-let addPick = null, addType = null, addTag = "";
+/* ------------------------------------------------------------ グラフ追加
+ * メインの使い方: 「指定したラインの、指定したグラフ」を同じページに並べる。
+ *   ラインを指定して項目を選ぶ → ライン × 項目 の数だけカードができる(L-1 生産重量 / L-2 稼働率 …)。
+ *   「共通条件に従う」を選ぶと、共通条件(と切り替え表示)に付いてくるカードになる。
+ */
+const ADD = { picks: [], type: "auto", tag: "", mode: "pin", lines: [], split: true };
 function suggest(m) { return m.kind === "ratio" ? "line" : m.kind === "breakdown" ? "pie" : "bar"; }
 function typeButtons(host, m, current, onPick) {
   host.innerHTML = Object.entries(META.charts).map(([k, label]) => {
@@ -369,34 +418,71 @@ function typeButtons(host, m, current, onPick) {
   }).join("");
   host.onclick = (e) => { const b = e.target.closest("[data-type]"); if (b && !b.disabled) onPick(b.dataset.type); };
 }
+/* 追加するカード(ライン, 項目, 種類)の一覧 */
+function addPlan() {
+  const metricsPicked = ADD.picks.map(metricOf);
+  const typeFor = (m) => (ADD.type === "auto" || m.charts[ADD.type] ? suggest(m) : ADD.type);
+  if (ADD.mode === "common") return metricsPicked.map((m) => ({ lines: null, m, chart: typeFor(m) }));
+  if (!ADD.lines.length) return [];
+  if (!ADD.split) return metricsPicked.map((m) => ({ lines: ADD.lines.slice(), m, chart: typeFor(m) }));
+  return ADD.lines.flatMap((l) => metricsPicked.map((m) => ({ lines: [l], m, chart: typeFor(m) })));
+}
 function renderAdd() {
+  document.querySelectorAll('input[name="add-mode"]').forEach((r) => { r.checked = r.value === ADD.mode; });
+  $("add-linebox").classList.toggle("is-common", ADD.mode === "common");
+  linePicker($("add-lines"), ADD.lines, false, (all, picked) => { ADD.lines = picked; renderAdd(); }, false);
+  $("add-split").checked = ADD.split;
   $("add-tags").innerHTML = [["", "すべて"], ...META.categories.map((c) => [c, c])].map(([v, t]) =>
-    `<button class="tag" type="button" role="tab" data-tag="${esc(v)}" aria-selected="${v === addTag}">${esc(t)}</button>`).join("");
+    `<button class="tag" type="button" role="tab" data-tag="${esc(v)}" aria-selected="${v === ADD.tag}">${esc(t)}</button>`).join("");
   const q = $("add-q").value.trim();
-  const list = META.metrics.filter((m) => (!addTag || m.category === addTag) && (!q || `${m.label}${m.category}${m.note}${m.unit}`.includes(q)));
-  $("add-cards").innerHTML = list.map((m) => `<button class="mcard" type="button" data-key="${m.key}" aria-pressed="${addPick === m.key}" ${m.available ? "" : "disabled"}>
+  const list = META.metrics.filter((m) => (!ADD.tag || m.category === ADD.tag) && (!q || `${m.label}${m.category}${m.note}${m.unit}`.includes(q)));
+  $("add-cards").innerHTML = list.map((m) => `<button class="mcard" type="button" data-key="${m.key}" aria-pressed="${ADD.picks.includes(m.key)}" ${m.available ? "" : "disabled"}>
       <span class="mcard__cat">${esc(m.category)}</span><span class="mcard__name">${esc(m.label)}</span>
       <span class="mcard__unit">${esc(m.unit)} · ${esc({ sum: "量", ratio: "率", breakdown: "内訳" }[m.kind])}</span>
       ${m.available ? "" : `<span class="mcard__why">${esc(m.reason)}</span>`}</button>`).join("") || `<p class="lead">見つかりません。</p>`;
-  const m = addPick && metricOf(addPick);
-  typeButtons($("add-types"), m, addType, (t) => { addType = t; renderAdd(); });
-  $("add-why").textContent = m ? m.note : "項目を選んでください。";
-  $("add-ok").disabled = !(m && addType);
+  // 種類: 「おすすめ」は項目ごとに合うもの。決めた種類が合わない項目は、その項目のおすすめにする
+  const types = [["auto", "項目ごとのおすすめ"], ...Object.entries(META.charts)];
+  $("add-types").innerHTML = types.map(([k, label]) => `<button class="ctype" type="button" data-type="${k}" aria-pressed="${k === ADD.type}">${esc(label)}</button>`).join("");
+  const plan = addPlan();
+  const names = plan.map((p) => `${p.lines && p.lines.length === 1 ? p.lines[0] + " " : ""}${p.m.label}(${META.charts[p.chart]})`);
+  $("add-why").textContent = !ADD.picks.length ? "グラフにする項目を選んでください(いくつでも選べます)。"
+    : ADD.mode === "pin" && !ADD.lines.length ? "ラインを選んでください。"
+    : `${plan.length}枚のカードを追加します: ${names.slice(0, 6).join(" / ")}${names.length > 6 ? ` ほか${names.length - 6}枚` : ""}`;
+  $("add-ok").disabled = !plan.length;
+  $("add-ok").textContent = plan.length ? `${plan.length}枚追加` : "追加";
 }
-$("add-tags").onclick = (e) => { const t = e.target.closest("[data-tag]"); if (t) { addTag = t.dataset.tag; renderAdd(); } };
+$("add-types").onclick = (e) => { const b = e.target.closest("[data-type]"); if (b) { ADD.type = b.dataset.type; renderAdd(); } };
+document.querySelectorAll('input[name="add-mode"]').forEach((r) => { r.onchange = () => { ADD.mode = r.value; renderAdd(); }; });
+$("add-split").onchange = () => { ADD.split = $("add-split").checked; renderAdd(); };
+$("add-tags").onclick = (e) => { const t = e.target.closest("[data-tag]"); if (t) { ADD.tag = t.dataset.tag; renderAdd(); } };
 $("add-q").oninput = renderAdd;
-$("add-cards").onclick = (e) => { const c = e.target.closest("[data-key]"); if (c && !c.disabled) { addPick = c.dataset.key; addType = suggest(metricOf(addPick)); renderAdd(); } };
-$("add-cards").ondblclick = () => { if (!$("add-ok").disabled) $("add-ok").click(); };
-$("add-graph").onclick = () => { addPick = null; addType = null; $("add-q").value = ""; renderAdd(); $("add-modal").hidden = false; $("add-q").focus(); };
+$("add-cards").onclick = (e) => {
+  const c = e.target.closest("[data-key]"); if (!c || c.disabled) return;
+  const k = c.dataset.key;
+  ADD.picks = ADD.picks.includes(k) ? ADD.picks.filter((x) => x !== k) : [...ADD.picks, k];
+  renderAdd();
+};
+$("add-graph").onclick = () => {
+  ADD.picks = []; ADD.type = "auto"; $("add-q").value = "";
+  if (!ADD.lines.length) ADD.lines = commonLines().slice(0, 1);
+  renderAdd(); $("add-modal").hidden = false; $("add-q").focus();
+};
 document.querySelectorAll("[data-close]").forEach((b) => { b.onclick = () => { $("add-modal").hidden = true; }; });
 $("add-modal").addEventListener("click", (e) => { if (e.target === $("add-modal")) $("add-modal").hidden = true; });
 $("add-ok").onclick = () => {
-  const spot = findSpot(6, 5);
-  const g = newChart(addPick, addType, spot.x, spot.y, 6, 5);
-  C().charts.push(g);
+  let first = null;
+  for (const p of addPlan()) {
+    const single = p.lines && p.lines.length === 1;
+    const w = single ? 4 : 6, h = 5;
+    const spot = findSpot(w, h);
+    const g = newChart(p.m.key, p.chart, spot.x, spot.y, w, h);
+    if (p.lines) g.own.lines = p.lines;
+    C().charts.push(g);
+    first = first || g;
+  }
   $("add-modal").hidden = true;
   changed(false);
-  document.querySelector(`.gcard[data-id="${g.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (first) document.querySelector(`.gcard[data-id="${first.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
 };
 
 /* ------------------------------------------------------------ グラフの設定 */
@@ -408,7 +494,7 @@ function openDrawer(id) {
   $("drawer").hidden = false;
   const m = metricOf(g.metric);
   $("dr-name").value = g.title;
-  $("dr-name").placeholder = m.label;
+  $("dr-name").placeholder = titleOf({ ...g, title: "" });
   $("dr-metric").innerHTML = META.categories.map((cat) => `<optgroup label="${esc(cat)}">${META.metrics.filter((x) => x.category === cat)
     .map((x) => `<option value="${x.key}" ${x.available ? "" : "disabled"}>${esc(x.label)}(${esc(x.unit)})</option>`).join("")}</optgroup>`).join("");
   $("dr-metric").value = g.metric;
@@ -445,7 +531,7 @@ function closeDrawer() {
 const activeChart = () => C().charts.find((x) => x.id === ACTIVE);
 $("dr-close").onclick = closeDrawer;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); $("add-modal").hidden = true; $("dash-pop").hidden = true; } });
-$("dr-name").oninput = () => { const g = activeChart(); g.title = $("dr-name").value; markDirty(); const t = document.querySelector(`.gcard[data-id="${g.id}"] .gcard__title`); if (t) t.textContent = g.title || metricOf(g.metric).label; };
+$("dr-name").oninput = () => { const g = activeChart(); g.title = $("dr-name").value; markDirty(); const t = document.querySelector(`.gcard[data-id="${g.id}"] .gcard__title`); if (t) t.textContent = titleOf(g); };
 $("dr-metric").onchange = () => {
   const g = activeChart(); g.metric = $("dr-metric").value;
   const m = metricOf(g.metric);
@@ -556,7 +642,7 @@ async function savePng(card, g) {
   ctx.scale(scale, scale);
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, box.width, box.height + titleH);
   ctx.fillStyle = "#18212f"; ctx.font = 'bold 15px "Yu Gothic UI","Meiryo UI",sans-serif';
-  const title = g.title || metricOf(g.metric).label;
+  const title = titleOf(g);
   ctx.fillText(title, 10, 20);
   ctx.font = '11px "Yu Gothic UI","Meiryo UI",sans-serif'; ctx.fillStyle = "#5d6675";
   ctx.fillText(card.querySelector(".gcard__foot").textContent, 10, box.height + titleH - 8);

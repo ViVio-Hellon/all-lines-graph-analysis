@@ -98,6 +98,9 @@ def normalize(config: Any) -> dict:
         "period": _period(common.get("period")),
         "grain": common.get("grain") if common.get("grain") in metrics.GRAINS else "day",
         "shift": str(common.get("shift") or ""),
+        # 1ラインずつ切り替えて見る(ラインを指定したカードは切り替わらない)
+        "switch": bool(common.get("switch", False)),
+        "current": str(common.get("current") or ""),
     }
     charts = []
     for raw in c.get("charts") or []:

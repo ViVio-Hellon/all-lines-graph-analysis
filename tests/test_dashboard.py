@@ -48,10 +48,22 @@ class MetricsTest(TempEnv):
         csv_rate = agg_data.load([self.root], "L-1", D1, D1)[0].shifts[0].rate_pct
         self.assertAlmostEqual(round(r["series"][0]["values"][0], 1), csv_rate)
 
-    def test_multi_shift_rate_uses_all_tools_day_rate(self):
-        # (1440×2 − 停止合計 120) ÷ (1440×2)。直の平均ではない
+    def test_multi_shift_rate_matches_all_tools_daily_trend(self):
+        # all-tools「日別稼働率推移」: その日の全直を足して (1440 − 停止合計 120) ÷ 1440
         r = self._compute("rate", "line", start=D1, end=D1)
+        self.assertAlmostEqual(r["series"][0]["values"][0], (1440 - 120) / 1440 * 100)
+
+    def test_weekly_rate_is_mean_of_daily_rates(self):
+        # 11/2 (1440−120)/1440 と 11/3 (1440−0)/1440 の平均。データの無い日は数えない
+        r = self._compute("rate", "line", grain="week", start=D1, end=date(2026, 11, 8))
         self.assertAlmostEqual(r["series"][0]["values"][0], (2880 - 120) / 2880 * 100)
+
+    def test_rate_is_not_clamped_like_all_tools(self):
+        root = self.tmp / "多い停止"
+        write_day(root, "L-9", D1, [shift_row(D1, "L-9", s, 1, 0.1, {"sudden": 600}) for s in ("1直", "2直", "3直")])
+        days = agg_data.load([root], "L-9", D1, D1)
+        r = metrics.compute(days, metrics.BY_KEY["rate"], D1, D1, "day", "line")
+        self.assertAlmostEqual(r["series"][0]["values"][0], (1440 - 1800) / 1440 * 100)
 
     def test_productivity_matches_shift_formula_and_rolls_up(self):
         one = self._compute("productivity", "bar", shift="1直", start=D1, end=D1)
@@ -144,6 +156,13 @@ class StoreTest(TempEnv):
         dash_store.delete(item["id"])
         self.assertEqual(len(dash_store.list_all()), 2)
         self.assertEqual(len(dash_store.list_all("コピー (2)")), 1)
+
+    def test_switch_view_and_pinned_lines_are_kept(self):
+        item = dash_store.create("切替", {"common": {"switch": True, "current": "L-2"},
+                                        "charts": [{"id": "p", "metric": "weight", "own": {"lines": ["L-1"]}}]})
+        c = item["config"]
+        self.assertEqual((c["common"]["switch"], c["common"]["current"]), (True, "L-2"))
+        self.assertEqual(c["charts"][0]["own"], {"lines": ["L-1"]})
 
     def test_survives_restart(self):
         item = dash_store.create("復元", {"charts": [{"id": "x", "metric": "weight", "chart": "line",

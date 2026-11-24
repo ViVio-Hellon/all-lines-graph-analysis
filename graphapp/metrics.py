@@ -3,8 +3,12 @@
 【決まり】
 * **all-tools の集計値と式を正とする。** 合計できる数(枚数・重量・時間)は足すだけ。
 * 稼働率・生産性は**足せない**ので、まとめるときは all-tools の式で出し直す:
-    稼働率(%) = (1440分 × 直の数 − 停止合計) ÷ (1440分 × 直の数) × 100
-        (`logic/aggregation.day_rate_pct`「直ごとの平均ではなく、合計から出し直す」)
+    稼働率(%) = (1440分 × 日数 − 停止合計) ÷ (1440分 × 日数) × 100
+        all-tools の集計・グラフ画面「日別稼働率推移」と同じ式(`summary.period_rows` で
+        その日の全直を足し、`ShiftAggregate.operating_rate_pct` = (1440 − 停止合計) ÷ 1440)。
+        日別ならその日の値そのもの。週・月・年は日数ぶんの 1440分で割る(= 日別の値の平均)。
+        直を1つに絞れば (1440 − その直の停止) ÷ 1440 で、集計CSVの「稼働率(%)」と同じ。
+        all-tools と同じく 0 未満でも切り上げない。
     生産性(t/h) = 重量(t) ÷ ((1440分 × 直の数 − 停止合計) ÷ 60)
         (`ShiftAggregate.productivity_t_per_h` の分母「稼働時間」を直の数ぶん足したもの。
          稼働時間が 0 以下なら 0)
@@ -83,7 +87,7 @@ METRICS: tuple[Metric, ...] = (
     Metric("operational", "操業時間", "稼働状況", "分", "sum", "summary", "集計CSVの「操業時間(分)」"),
     Metric("stop_total", "停止時間", "稼働状況", "分", "sum", "summary", "集計CSVの「停止合計(分)」"),
     Metric("rate", "稼働率", "稼働状況", "%", "ratio", "summary",
-           "(1440分×直の数−停止合計)÷(1440分×直の数)。all-tools の day_rate_pct と同じ式", digits=1),
+           "(1440分×日数−停止合計)÷(1440分×日数)。all-tools の「日別稼働率推移」と同じ式", digits=1),
     # 停止分析
     Metric("stop_kinds", "停止の分類別 時間", "停止分析", "分", "breakdown", "summary",
            "管理ロス設備停止・段取り・突発停止・ハンドリング停止・その他(集計CSV)"),
@@ -170,15 +174,20 @@ def _sum(values: list[Optional[float]]) -> Optional[float]:
     return sum(found) if found else None
 
 
-def _ratio(rows: list[ShiftRow], key: str) -> Optional[float]:
-    """稼働率・生産性を all-tools の式で(直の行が無ければ None)。"""
-    usable = [r for r in rows if r.stop_min is not None]
+def _ratio(day_rows: list[list[ShiftRow]], key: str) -> Optional[float]:
+    """稼働率・生産性を all-tools の式で。day_rows = 日ごとの直の行。行が無ければ None。"""
+    days = [[r for r in rows if r.stop_min is not None] for rows in day_rows]
+    days = [rows for rows in days if rows]
+    usable = [r for rows in days for r in rows]
     if not usable:
         return None
-    whole = MINUTES_PER_DAY * len(usable)
-    operating = whole - sum(r.stop_min for r in usable)
+    stopped = sum(r.stop_min for r in usable)
     if key == "rate":
-        return max(0.0, operating / whole * 100)
+        # 「日別稼働率推移」と同じ: その日の全直を足して 1440分で割る(期間は日数ぶん)
+        whole_days = MINUTES_PER_DAY * len(days)
+        return (whole_days - stopped) / whole_days * 100
+    whole = MINUTES_PER_DAY * len(usable)
+    operating = whole - stopped
     weight = _sum([r.weight_t for r in usable])
     if weight is None:
         return None
@@ -249,8 +258,8 @@ def compute(days: list[DayData], metric: Metric, start: date, end: date, grain: 
     days_count = [len(b) for b in per_bucket]
 
     if metric.kind == "ratio":
-        values = [_ratio([r for d in b for r in _shifts(d, shift)], metric.key) for b in per_bucket]
-        total = _ratio([r for d in days if start <= d.day <= end for r in _shifts(d, shift)], metric.key)
+        values = [_ratio([_shifts(d, shift) for d in b], metric.key) for b in per_bucket]
+        total = _ratio([_shifts(d, shift) for d in days if start <= d.day <= end], metric.key)
         return {"labels": labels, "series": [{"name": shift or "全直", "values": values}],
                 "days": days_count, "total": total, "mode": "time"}
 

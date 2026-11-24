@@ -47,11 +47,17 @@
 
   <!-- 2段目: 共通条件 -->
   <section class="common" aria-label="共通条件">
-    <div class="common__title">共通条件 <span class="lead">個別に決めたグラフには効きません</span></div>
+    <div class="common__title">共通条件 <span class="lead">「ライン指定」や個別に決めたグラフには効きません</span></div>
     <div class="common__row">
       <div class="field field--lines">
         <span class="field__label">対象ライン</span>
         <div class="linepick" id="c-lines"></div>
+        <div class="view" id="c-view" role="group" aria-label="表示のしかた">
+          <span class="field__label">表示</span>
+          <button class="seg" type="button" data-view="all" aria-pressed="true">選んだラインをすべて並べる</button>
+          <button class="seg" type="button" data-view="switch" aria-pressed="false">1ラインずつ切り替える</button>
+        </div>
+        <div class="ltabs" id="c-switch" role="tablist" aria-label="表示するライン" hidden></div>
       </div>
       <div class="field">
         <label class="field__label" for="c-preset">集計期間</label>
@@ -86,13 +92,23 @@
   <div class="modal__box">
     <div class="modal__head"><h2 id="add-title">グラフを追加</h2>
       <button class="btn btn--sm" type="button" data-close>閉じる</button></div>
+    <div class="astep"><span class="astep__n">1</span><b>どのラインのグラフか</b></div>
+    <div class="addline" id="add-linebox">
+      <div class="own__head">
+        <label><input type="radio" name="add-mode" value="pin"> ラインを指定する</label>
+        <label><input type="radio" name="add-mode" value="common"> 共通条件に従う(切り替え表示に付いてくる)</label>
+      </div>
+      <div class="linepick" id="add-lines"></div>
+      <label class="check"><input type="checkbox" id="add-split"> ラインごとに別のカードにする(L-1 生産重量 / L-2 生産重量 …)</label>
+    </div>
+    <div class="astep"><span class="astep__n">2</span><b>グラフにする項目</b> <span class="lead">いくつでも選べます</span></div>
     <input type="search" id="add-q" placeholder="項目を探す(例: 重量・停止・稼働率)" aria-label="項目を探す">
     <div class="tags" id="add-tags" role="tablist" aria-label="分類"></div>
     <div class="mcards" id="add-cards"></div>
     <div class="add-foot">
-      <div class="field"><span class="field__label">グラフの種類</span><div class="ctypes" id="add-types"></div></div>
+      <div class="field"><span class="field__label"><span class="astep__n">3</span> グラフの種類</span><div class="ctypes" id="add-types"></div></div>
       <p class="lead" id="add-why"></p>
-      <button class="btn btn--primary" type="button" id="add-ok" disabled>この項目で追加</button>
+      <button class="btn btn--primary" type="button" id="add-ok" disabled>追加</button>
     </div>
   </div>
 </div>
@@ -110,7 +126,7 @@
     <div class="own" data-own="lines">
       <div class="own__head"><span class="field__label">対象ライン</span>
         <label><input type="radio" name="own-lines" value="common"> 共通</label>
-        <label><input type="radio" name="own-lines" value="own"> このグラフだけ</label></div>
+        <label><input type="radio" name="own-lines" value="own"> ラインを指定</label></div>
       <div class="linepick" id="dr-lines"></div>
     </div>
     <div class="own" data-own="period">
