@@ -55,6 +55,10 @@ SPECS: tuple[PathSpec, ...] = (
              "この下の all_lines_graph\\ に端末ごとのファイルで書きます。"
              "共有のフォルダにすると、どの端末のエラーも1か所で見られます。",
              "空なら この端末の中(%LOCALAPPDATA%\\AllLinesGraph\\logs)"),
+    PathSpec(config.KEY_EXPORT_DIR, "CSV・画像の書き出し先", GROUP_WRITE,
+             "ダッシュボードの「CSVに出す」「画像で保存」はここの下の <yyyy.mm> フォルダへ書きます"
+             "(ブラウザのダウンロードは使いません)。",
+             "空なら この端末の中(%LOCALAPPDATA%\\AllLinesGraph\\work)"),
 )
 SPEC_BY_KEY = {s.key: s for s in SPECS}
 PROTECTED = frozenset(s.key for s in SPECS if s.protected)
@@ -111,6 +115,8 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         target = s.access_dir
     elif spec.key == config.KEY_ACCESS_DB_FILE:
         target = s.access_db_path
+    elif spec.key == config.KEY_EXPORT_DIR:
+        target = s.export_dir
     else:
         target = s.log_dir
     if target is None:
@@ -125,7 +131,7 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         view.found_text, view.missing_text = "このファイルがあります", "このファイルがありません"
     else:
         view.found_text, view.missing_text = "このフォルダがあります", "このフォルダがありません"
-    if spec.key == config.KEY_LOG_DIR and not view.exists:
+    if spec.key in (config.KEY_LOG_DIR, config.KEY_EXPORT_DIR) and not view.exists:
         view.missing_text = "このフォルダがありません(初めて書くときに作ります)"
     if spec.key in (config.KEY_AGG_ROOT, config.KEY_AGG_ROOT2) and view.exists:
         scan = agg_store.scan_root(target)

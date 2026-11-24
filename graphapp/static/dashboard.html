@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダッシュボード | 全ライン グラフ分析</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body class="dash">
+<header class="appbar">
+  <div class="appbar__title">全ライン グラフ分析 <span class="appbar__ver" id="app-ver"></span></div>
+  <nav class="appbar__nav" aria-label="画面">
+    <a class="appbar__link appbar__link--on" href="/dashboard" aria-current="page">ダッシュボード</a>
+    <a class="appbar__link" href="/settings">設定</a>
+  </nav>
+  <div class="appbar__who" id="app-who"></div>
+</header>
+
+<main class="dpage">
+  <!-- 1段目: ダッシュボードの呼び出し・保存 -->
+  <div class="toolbar" id="toolbar">
+    <div class="dsel">
+      <button class="btn dsel__btn" type="button" id="dash-open" aria-haspopup="listbox" aria-expanded="false">
+        <span class="dsel__name" id="dash-name">新しいダッシュボード</span> <span aria-hidden="true">▾</span></button>
+      <span class="dirty" id="dirty" hidden>未保存の変更</span>
+      <div class="dsel__pop" id="dash-pop" hidden>
+        <input type="search" id="dash-q" placeholder="保存したダッシュボードを探す" aria-label="ダッシュボードを探す">
+        <ul id="dash-list" role="listbox"></ul>
+        <button class="btn btn--sm" type="button" id="dash-new">＋ 新しく作る</button>
+      </div>
+    </div>
+    <div class="toolbar__group">
+      <button class="btn btn--primary" type="button" id="dash-save">保存</button>
+      <button class="btn" type="button" id="dash-saveas">別名で保存</button>
+      <button class="btn" type="button" id="dash-dup">複製</button>
+      <button class="btn btn--danger" type="button" id="dash-del">削除</button>
+    </div>
+    <div class="toolbar__group toolbar__group--end">
+      <button class="btn btn--primary" type="button" id="add-graph">＋ グラフ追加</button>
+      <button class="btn" type="button" id="reload">データを読み直す</button>
+      <button class="btn" type="button" id="export-csv">CSVに出す</button>
+      <button class="btn" type="button" id="print">印刷・PDF</button>
+    </div>
+  </div>
+  <div class="msg" id="msg" hidden></div>
+
+  <!-- 2段目: 共通条件 -->
+  <section class="common" aria-label="共通条件">
+    <div class="common__title">共通条件 <span class="lead">個別に決めたグラフには効きません</span></div>
+    <div class="common__row">
+      <div class="field field--lines">
+        <span class="field__label">対象ライン</span>
+        <div class="linepick" id="c-lines"></div>
+      </div>
+      <div class="field">
+        <label class="field__label" for="c-preset">集計期間</label>
+        <div class="period">
+          <select id="c-preset"></select>
+          <input type="date" id="c-start" aria-label="開始日"><span>〜</span><input type="date" id="c-end" aria-label="終了日">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field__label" for="c-grain">集計単位</label>
+        <select id="c-grain"></select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="c-shift">直</label>
+        <select id="c-shift"></select>
+      </div>
+    </div>
+    <div class="roots" id="roots"></div>
+  </section>
+
+  <!-- グラフを置く盤 -->
+  <div class="print-head" id="print-head"></div>
+  <div class="board" id="board" aria-label="グラフの盤"></div>
+  <div class="empty" id="empty" hidden>
+    <p><strong>グラフがまだありません。</strong></p>
+    <p class="lead">「＋ グラフ追加」から項目とグラフの種類を選ぶと、ここに置かれます。カードは見出しをつかんで動かし、右下の角で大きさを変えられます。</p>
+  </div>
+</main>
+
+<!-- グラフ追加(検索・分類タグ・項目カード) -->
+<div class="modal" id="add-modal" hidden role="dialog" aria-modal="true" aria-labelledby="add-title">
+  <div class="modal__box">
+    <div class="modal__head"><h2 id="add-title">グラフを追加</h2>
+      <button class="btn btn--sm" type="button" data-close>閉じる</button></div>
+    <input type="search" id="add-q" placeholder="項目を探す(例: 重量・停止・稼働率)" aria-label="項目を探す">
+    <div class="tags" id="add-tags" role="tablist" aria-label="分類"></div>
+    <div class="mcards" id="add-cards"></div>
+    <div class="add-foot">
+      <div class="field"><span class="field__label">グラフの種類</span><div class="ctypes" id="add-types"></div></div>
+      <p class="lead" id="add-why"></p>
+      <button class="btn btn--primary" type="button" id="add-ok" disabled>この項目で追加</button>
+    </div>
+  </div>
+</div>
+
+<!-- グラフの設定(右から出す) -->
+<aside class="drawer" id="drawer" hidden aria-labelledby="dr-title">
+  <div class="drawer__head"><h2 id="dr-title">グラフの設定</h2><button class="btn btn--sm" type="button" id="dr-close">閉じる</button></div>
+  <div class="drawer__body">
+    <div class="field"><label class="field__label" for="dr-name">タイトル</label><input id="dr-name" type="text" placeholder="空なら項目名"></div>
+    <div class="field"><label class="field__label" for="dr-metric">データ項目</label><select id="dr-metric"></select>
+      <span class="lead" id="dr-metric-note"></span></div>
+    <div class="field"><span class="field__label">グラフの種類</span><div class="ctypes" id="dr-types"></div><span class="lead" id="dr-why"></span></div>
+
+    <h3>条件 <span class="lead">「共通」は画面上の共通条件に従います</span></h3>
+    <div class="own" data-own="lines">
+      <div class="own__head"><span class="field__label">対象ライン</span>
+        <label><input type="radio" name="own-lines" value="common"> 共通</label>
+        <label><input type="radio" name="own-lines" value="own"> このグラフだけ</label></div>
+      <div class="linepick" id="dr-lines"></div>
+    </div>
+    <div class="own" data-own="period">
+      <div class="own__head"><span class="field__label">期間</span>
+        <label><input type="radio" name="own-period" value="common"> 共通</label>
+        <label><input type="radio" name="own-period" value="own"> このグラフだけ</label></div>
+      <div class="period"><select id="dr-preset" aria-label="期間"></select>
+        <input type="date" id="dr-start" aria-label="開始日"><span>〜</span><input type="date" id="dr-end" aria-label="終了日"></div>
+    </div>
+    <div class="own" data-own="grain">
+      <div class="own__head"><span class="field__label">集計単位</span>
+        <label><input type="radio" name="own-grain" value="common"> 共通</label>
+        <label><input type="radio" name="own-grain" value="own"> このグラフだけ</label></div>
+      <select id="dr-grain" aria-label="集計単位"></select>
+    </div>
+    <div class="own" data-own="shift">
+      <div class="own__head"><span class="field__label">直</span>
+        <label><input type="radio" name="own-shift" value="common"> 共通</label>
+        <label><input type="radio" name="own-shift" value="own"> このグラフだけ</label></div>
+      <select id="dr-shift" aria-label="直"></select>
+    </div>
+
+    <h3>見た目</h3>
+    <div class="field"><label class="field__label" for="dr-color">色(1系列のとき)</label>
+      <div class="colorrow"><input id="dr-color" type="color"><label><input type="checkbox" id="dr-color-line"> ラインの色を使う</label></div></div>
+    <label class="check"><input type="checkbox" id="dr-legend"> 凡例を出す</label>
+    <label class="check"><input type="checkbox" id="dr-labels"> 数値ラベルを出す</label>
+    <label class="check"><input type="checkbox" id="dr-same"> ラインどうしで縦軸の目盛りをそろえる</label>
+    <div class="row">
+      <div class="field"><label class="field__label" for="dr-ymin">縦軸の下限</label><input id="dr-ymin" type="number" step="any" placeholder="自動" size="8"></div>
+      <div class="field"><label class="field__label" for="dr-ymax">縦軸の上限</label><input id="dr-ymax" type="number" step="any" placeholder="自動" size="8"></div>
+    </div>
+  </div>
+</aside>
+
+<script src="/static/chart.js"></script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

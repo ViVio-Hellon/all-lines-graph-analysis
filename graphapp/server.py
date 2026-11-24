@@ -16,6 +16,14 @@
     GET  /api/log/events?start&end&terminal&level&q
     GET  /api/log/tail?lines=200
     GET  /api/agg/days?line&start&end   大本からたどった各日の集計CSV(確かめる用)
+
+【API】(ダッシュボード)
+    GET  /api/dash/meta                 項目の一覧・ライン・直
+    GET  /api/dash/list?q=              保存したダッシュボード
+    GET  /api/dash/get?id=              1つ(最後に開いたものとして覚える)
+    POST /api/dash/data                 グラフ1枚ぶんの数(ラインごと)
+    POST /api/dash/create|save|duplicate|delete
+    POST /api/dash/export/csv|png       設定の書き出し先へ書く
 """
 from __future__ import annotations
 
@@ -30,7 +38,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import admin_password, agg_store, app_config, config, distribution, settings_view
+from . import admin_password, agg_store, app_config, config, dash_store, dashboard, distribution, settings_view
 from .logging_setup import events as log_events, get_logger, note, tail as log_tail
 
 log = get_logger("server")
@@ -108,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         if not length:
             return {}
         try:
-            data = json.loads(self.rfile.read(min(length, 1_000_000)).decode("utf-8"))
+            data = json.loads(self.rfile.read(min(length, 20_000_000)).decode("utf-8"))
         except ValueError:
             return {}
         return data if isinstance(data, dict) else {}
@@ -120,8 +128,22 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         q = {k: v[-1] for k, v in parse_qs(url.query).items()}
         try:
-            if url.path in ("/", "/settings"):
+            if url.path in ("/", "/dashboard"):
+                return self._static("dashboard.html")
+            if url.path == "/settings":
                 return self._static("settings.html")
+            if url.path == "/api/dash/meta":
+                return self._json(dashboard.meta())
+            if url.path == "/api/dash/list":
+                return self._json({"items": dash_store.list_all(q.get("q", "")),
+                                   "last_opened": dash_store.last_opened()})
+            if url.path == "/api/dash/get":
+                try:
+                    item = dash_store.get(int(q.get("id", "0") or 0))
+                except (ValueError, dash_store.DashError) as exc:
+                    return self._json({"ok": False, "message": str(exc)}, 404)
+                dash_store.set_last_opened(item["id"])
+                return self._json({"ok": True, "item": item})
             if url.path.startswith("/static/"):
                 return self._static(url.path[len("/static/"):])
             if url.path == "/api/settings/state":
@@ -179,6 +201,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "message": f"内部エラー: {exc}"}, 500)
 
     def _post(self, path: str, body: dict) -> dict:
+        if path.startswith("/api/dash/"):
+            try:
+                return self._dash(path, body)
+            except (dashboard.RequestError, dash_store.DashError) as exc:
+                return {"ok": False, "message": str(exc), "reason": getattr(exc, "reason", "bad_input")}
         admin = ADMIN.is_open()
         pw = str(body.get("password") or "")
         if path == "/api/settings/paths":
@@ -213,6 +240,44 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/dist/remove":
             return {**distribution.remove(pw, admin=admin).to_dict(),
                     "distribution": distribution.summary()}
+        return {"ok": False, "message": f"知らない操作です: {path}"}
+
+
+    def _dash(self, path: str, body: dict) -> dict:
+        def _id() -> int:
+            try:
+                return int(body.get("id"))
+            except (TypeError, ValueError):
+                raise dashboard.RequestError("ダッシュボードが選ばれていません。") from None
+
+        if path == "/api/dash/data":
+            return {"ok": True, **dashboard.graph(body)}
+        if path == "/api/dash/create":
+            item = dash_store.create(body.get("name"), body.get("config"))
+            dash_store.set_last_opened(item["id"])
+            note(f"ダッシュボードを作りました: {item['name']}", label="ダッシュボードを保存した")
+            return {"ok": True, "item": item, "message": f"「{item['name']}」を保存しました。"}
+        if path == "/api/dash/save":
+            item = dash_store.save(_id(), body.get("config"), body.get("revision"), body.get("name"))
+            note(f"ダッシュボードを上書き保存しました: {item['name']}", label="ダッシュボードを保存した")
+            return {"ok": True, "item": item, "message": f"「{item['name']}」を上書き保存しました。"}
+        if path == "/api/dash/duplicate":
+            item = dash_store.duplicate(_id(), body.get("name"))
+            dash_store.set_last_opened(item["id"])
+            return {"ok": True, "item": item, "message": f"「{item['name']}」として複製しました。"}
+        if path == "/api/dash/delete":
+            name = dash_store.get(_id())["name"]
+            dash_store.delete(_id())
+            if dash_store.last_opened() == _id():
+                dash_store.set_last_opened(None)
+            note(f"ダッシュボードを消しました: {name}", label="ダッシュボードを消した")
+            return {"ok": True, "message": f"「{name}」を消しました。"}
+        if path == "/api/dash/export/csv":
+            specs = [s for s in body.get("graphs") or [] if isinstance(s, dict)]
+            return dashboard.export_csv(str(body.get("name") or "ダッシュボード"), specs)
+        if path == "/api/dash/export/png":
+            return dashboard.export_png(str(body.get("name") or "ダッシュボード"),
+                                        str(body.get("title") or "グラフ"), str(body.get("png") or ""))
         return {"ok": False, "message": f"知らない操作です: {path}"}
 
 

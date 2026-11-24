@@ -8,6 +8,7 @@
     access_dir            共有の日報データの置き場所(読み取り専用で読む)
     access_db_filename    共有の日報データのファイル名(既定 日報データ.sqlite3)
     log_dir               ログの出力パス
+    graph_export_dir      CSV・画像の書き出し先(このアプリだけ)
     admin_password        管理者パスワード(撹拌した値)
 
 【集計データは「大本」だけ決める】
@@ -31,6 +32,8 @@ KEY_AGG_ROOT2 = "report_output_dir_2"
 KEY_ACCESS_DIR = "access_dir"
 KEY_ACCESS_DB_FILE = "access_db_filename"
 KEY_LOG_DIR = "log_dir"
+#: ダッシュボードのCSV・画像の書き出し先(このアプリだけの鍵)
+KEY_EXPORT_DIR = "graph_export_dir"
 KEY_ADMIN_PASSWORD = "admin_password"
 
 DEFAULT_ACCESS_DB_FILE = "日報データ.sqlite3"
@@ -102,6 +105,12 @@ class _Settings:
     def log_dir(self) -> Path:
         configured = user_settings.text(KEY_LOG_DIR)
         return resolve_dir(configured) if configured else self.default_log_dir
+
+    @property
+    def export_dir(self) -> Path:
+        """CSV・画像の書き出し先。決めていなければこの端末の work。"""
+        configured = user_settings.text(KEY_EXPORT_DIR)
+        return resolve_dir(configured) if configured else app_config.local_dir("work")
 
     @property
     def default_log_dir(self) -> Path:

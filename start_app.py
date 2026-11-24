@@ -3,7 +3,7 @@
     1. ログを組む(「ログの出力パス」。届かなければこの端末へ)
     2. `配布設定\\` があれば、この端末で決めていない項目だけ読み込む
     3. 読み込んだ設定でログの書き先を移す
-    4. 127.0.0.1 で待ち受けて、ブラウザで設定タブを開く
+    4. 127.0.0.1 で待ち受けて、ブラウザでダッシュボードを開く
 
     python start_app.py            ふつうに起動
     python start_app.py --check    設定と大本のたどり方を表示して終わる(診断)
@@ -50,7 +50,7 @@ def main(argv: list[str]) -> int:
         launch.error("待ち受けを始められません: %s", exc)
         print(exc, file=sys.stderr)
         return 1
-    url = f"http://{app_config.HOST}:{httpd.server_port}/settings"
+    url = f"http://{app_config.HOST}:{httpd.server_port}/dashboard"
     launch.info("待ち受けを始めました: %s", url)
     logger.info("起動しました: %s(端末 %s)", url, app_config.terminal_name())
     if "--no-browser" not in argv:
