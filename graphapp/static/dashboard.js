@@ -430,7 +430,11 @@ function addPlan() {
 function renderAdd() {
   document.querySelectorAll('input[name="add-mode"]').forEach((r) => { r.checked = r.value === ADD.mode; });
   $("add-linebox").classList.toggle("is-common", ADD.mode === "common");
-  linePicker($("add-lines"), ADD.lines, false, (all, picked) => { ADD.lines = picked; renderAdd(); }, false);
+  // 押した順を覚える(L-1 → LVC → HVC と押せば、カードもその順に並ぶ)
+  linePicker($("add-lines"), ADD.lines, false, (all, picked) => {
+    ADD.lines = [...ADD.lines.filter((l) => picked.includes(l)), ...picked.filter((l) => !ADD.lines.includes(l))];
+    renderAdd();
+  }, false);
   $("add-split").checked = ADD.split;
   $("add-tags").innerHTML = [["", "すべて"], ...META.categories.map((c) => [c, c])].map(([v, t]) =>
     `<button class="tag" type="button" role="tab" data-tag="${esc(v)}" aria-selected="${v === ADD.tag}">${esc(t)}</button>`).join("");
