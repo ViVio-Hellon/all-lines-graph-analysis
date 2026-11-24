@@ -1,0 +1,30 @@
+# デスクトップ版の外枠(Rust/Tauri)。業務の処理は Python(`bridge.py`)が持つ。
+# ここが持つのは: 窓・Python の起動と見張り・ポートを使わない受け渡し・多重起動の防止・
+# ブラウザ版との排他・終了の確認。詳しくは docs/デスクトップ版.md
+[package]
+name = "all-lines-graph-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "AllLinesGraph"
+path = "src/main.rs"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

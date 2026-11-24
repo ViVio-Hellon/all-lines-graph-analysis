@@ -222,7 +222,7 @@ function renderDist(d) {
 }
 async function distAction(path, body, msgEl) {
   if (!STATE.admin) {
-    const pw = prompt("管理者パスワード");
+    const pw = await UI.prompt("管理者パスワード", "", true);
     if (pw === null) return;
     body.password = pw;
   }
@@ -233,8 +233,8 @@ async function distAction(path, body, msgEl) {
 }
 $("dist-export").addEventListener("click", () => distAction("/api/dist/export",
   { items: [...document.querySelectorAll("[data-item]:checked")].map((c) => c.dataset.item) }, $("dist-msg")));
-$("dist-reapply").addEventListener("click", () => { if (confirm("この端末で決めた値も、配布設定の値で上書きします。よろしいですか？")) distAction("/api/dist/reapply", {}, $("dist-msg2")); });
-$("dist-remove").addEventListener("click", () => { if (confirm("配布設定フォルダを消します(この端末の設定はそのまま)。よろしいですか？")) distAction("/api/dist/remove", {}, $("dist-msg2")); });
+$("dist-reapply").addEventListener("click", async () => { if (await UI.confirm("この端末で決めた値も、配布設定の値で上書きします。よろしいですか？")) distAction("/api/dist/reapply", {}, $("dist-msg2")); });
+$("dist-remove").addEventListener("click", async () => { if (await UI.confirm("配布設定フォルダを消します(この端末の設定はそのまま)。よろしいですか？")) distAction("/api/dist/remove", {}, $("dist-msg2")); });
 
 /* ---------------- ログ ---------------- */
 function renderLog(l) {

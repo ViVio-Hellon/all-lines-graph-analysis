@@ -128,6 +128,7 @@ function markDirty() {
   document.title = `${dirty ? "● " : ""}${DASH.name} | 全ライン グラフ分析`;
 }
 window.addEventListener("beforeunload", (e) => { if (DASH && JSON.stringify(C()) !== SAVED) { e.preventDefault(); e.returnValue = ""; } });
+ALGDesktop.hasUnsaved = () => !!DASH && JSON.stringify(C()) !== SAVED;   // デスクトップ版の窓の ×
 
 /* ------------------------------------------------------------ 共通条件 */
 function linePicker(host, selected, allOn, onChange, withAll) {
@@ -262,11 +263,11 @@ function renderBoard() {
 
 function bindCard(card, g) {
   const head = card.querySelector(".gcard__head");
-  card.querySelector(".gcard__tools").addEventListener("click", (e) => {
+  card.querySelector(".gcard__tools").addEventListener("click", async (e) => {
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "edit") openDrawer(g.id);
     if (act === "png") savePng(card, g);
-    if (act === "del" && confirm(`「${titleOf(g)}」のグラフを消します。よろしいですか？`)) {
+    if (act === "del" && await UI.confirm(`「${titleOf(g)}」のグラフを消します。よろしいですか？`)) {
       C().charts = C().charts.filter((x) => x !== g);
       if (ACTIVE === g.id) closeDrawer();
       changed(false);
@@ -569,7 +570,7 @@ function use(item) {
   ["dash-dup", "dash-del"].forEach((id) => { $(id).disabled = !DASH.id; });
   renderCommon(); renderBoard(); markDirty();
 }
-function discardOk() { return JSON.stringify(C()) === SAVED || confirm("保存していない変更があります。捨ててよいですか？"); }
+async function discardOk() { return JSON.stringify(C()) === SAVED || UI.confirm("保存していない変更があります。捨ててよいですか？"); }
 async function openDash(id) {
   const r = await api(`/api/dash/get?id=${id}`);
   if (!r.ok) return say(false, r.message);
@@ -589,11 +590,11 @@ $("dash-open").onclick = async () => {
   if (!pop.hidden) { await refreshList(); $("dash-q").focus(); }
 };
 $("dash-q").oninput = refreshList;
-$("dash-list").onclick = (e) => { const li = e.target.closest("[data-id]"); if (li && discardOk()) { $("dash-pop").hidden = true; openDash(li.dataset.id); } };
+$("dash-list").onclick = async (e) => { const li = e.target.closest("[data-id]"); if (li && await discardOk()) { $("dash-pop").hidden = true; openDash(li.dataset.id); } };
 document.addEventListener("click", (e) => { if (!e.target.closest(".dsel")) $("dash-pop").hidden = true; });
-$("dash-new").onclick = () => { if (!discardOk()) return; $("dash-pop").hidden = true; use({ name: "新しいダッシュボード", config: defaultConfig() }); };
+$("dash-new").onclick = async () => { if (!(await discardOk())) return; $("dash-pop").hidden = true; use({ name: "新しいダッシュボード", config: defaultConfig() }); };
 async function saveAs(defaultName) {
-  const name = prompt("ダッシュボードの名前", defaultName);
+  const name = await UI.prompt("ダッシュボードの名前", defaultName);
   if (name === null) return;
   const r = await api("/api/dash/create", { name, config: C() });
   if (!r.ok) return say(false, r.message);
@@ -609,13 +610,13 @@ $("dash-save").onclick = async () => {
 };
 $("dash-saveas").onclick = () => saveAs(DASH.id ? `${DASH.name} のコピー` : "");
 $("dash-dup").onclick = async () => {
-  if (!DASH.id || !discardOk()) return;
+  if (!DASH.id || !(await discardOk())) return;
   const r = await api("/api/dash/duplicate", { id: DASH.id });
   if (!r.ok) return say(false, r.message);
   use(r.item); say(true, r.message);
 };
 $("dash-del").onclick = async () => {
-  if (!DASH.id || !confirm(`「${DASH.name}」を消します。元に戻せません。よろしいですか？`)) return;
+  if (!DASH.id || !(await UI.confirm(`「${DASH.name}」を消します。元に戻せません。よろしいですか？`))) return;
   const r = await api("/api/dash/delete", { id: DASH.id });
   if (!r.ok) return say(false, r.message);
   use({ name: "新しいダッシュボード", config: defaultConfig() }); say(true, r.message);

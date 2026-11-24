@@ -8,3 +8,9 @@ Thumbs.db
 # 配布設定(設定画面で書き出す)。共有フォルダのパスと管理者パスワードのハッシュが入るので上げない
 /配布設定/
 /配布設定.作成中/
+# デスクトップ版を作ったときにできるもの(cargo build で作り直せる)
+src-tauri/target/
+src-tauri/gen/
+# GitHub Actions から取ってきて直下に置く exe
+/AllLinesGraph.exe
+/全ライン グラフ分析.exe

@@ -1,0 +1,49 @@
+# デスクトップ版(全ライン グラフ分析.exe)を Windows で作って確かめる。
+#   1. Python の試験(Windows・追加ライブラリなし)
+#   2. Rust の試験と exe の作成
+#   3. exe を本当に起動して確かめる(scripts/desktop_smoke.py: 待ち受けない・2つ目は開かない・
+#      ブラウザ版は止まる・exe を止めると Python も終わる)
+# 成果物 AllLinesGraph-windows に AllLinesGraph.exe が入る。配るときは Start.vbs と同じフォルダに
+# 「全ライン グラフ分析.exe」の名前で置く(docs/デスクトップ版.md)。
+name: desktop-windows
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  python-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 試験(標準ライブラリだけ)
+        run: python -m unittest discover -s tests -t . -v
+
+  desktop:
+    runs-on: windows-latest
+    needs: python-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Rust の試験
+        working-directory: src-tauri
+        run: cargo test
+      - name: exe を作る
+        working-directory: src-tauri
+        run: cargo build --release
+      - name: exe を起動して確かめる
+        run: python -u scripts/desktop_smoke.py --exe src-tauri/target/release/AllLinesGraph.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AllLinesGraph-windows
+          path: src-tauri/target/release/AllLinesGraph.exe

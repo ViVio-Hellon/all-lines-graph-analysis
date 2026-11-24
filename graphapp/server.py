@@ -80,43 +80,65 @@ def _date(text: Optional[str], default: date) -> date:
         return default
 
 
-class Handler(BaseHTTPRequestHandler):
-    server_version = "AllLinesGraph/" + app_config.VERSION
+#: デスクトップ版(Tauri)の画面の宛先。ネットワークを通らない名前(Windows の WebView2 は http://app.localhost)
+BRIDGE_HOSTS = ("app.localhost", "localhost", "tauri.localhost")
+BRIDGE_SCHEMES = ("app", "http", "https", "tauri")
+
+
+class Exchange:
+    """要求1件 → 応答1件。**通り道(ポート / 標準入出力)に関係しない。**
+
+    ブラウザ版は `Handler`(http.server)が、デスクトップ版は `bridge.py` が、
+    これを作って `run()` を呼ぶ。中の振り分けは1つなので、2つの版で食い違わない。
+    """
+
+    def __init__(self, method: str, path: str, headers: dict, body: bytes, *,
+                 transport: str = "http", port: int = 0) -> None:
+        self.method = method.upper()
+        self.path = path
+        self.headers = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+        self.raw = body or b""
+        self.transport = transport
+        self.port = port
+        self.reply: tuple[int, str, bytes] = (500, "text/plain", b"")
+
+    def run(self) -> tuple[int, str, bytes]:
+        if self.method == "GET":
+            self.do_GET()
+        elif self.method == "POST":
+            self.do_POST()
+        else:
+            self._send(405, b"method not allowed", "text/plain")
+        return self.reply
 
     # ---- 共通 -------------------------------------------------------
-    def log_message(self, fmt: str, *args: Any) -> None:  # 標準エラーへは出さない
-        log.debug("%s %s", self.address_string(), fmt % args)
-
     def _host_ok(self) -> bool:
-        host = (self.headers.get("Host") or "").split(":")[0]
+        host = (self.headers.get("host") or "").split(":")[0]
+        if self.transport == "bridge":
+            return host in BRIDGE_HOSTS or not host
         return host in ("127.0.0.1", "localhost")
 
     def _origin_ok(self) -> bool:
-        origin = self.headers.get("Origin")
-        if not origin:
+        origin = self.headers.get("origin")
+        if not origin or origin == "null":
             return True
         parsed = urlparse(origin)
-        return parsed.hostname in ("127.0.0.1", "localhost") and parsed.port == self.server.server_port
+        if self.transport == "bridge":
+            return parsed.scheme in BRIDGE_SCHEMES and parsed.hostname in BRIDGE_HOSTS
+        return parsed.hostname in ("127.0.0.1", "localhost") and parsed.port == self.port
 
     def _send(self, status: int, body: bytes, ctype: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        self.reply = (status, ctype, body)
 
     def _json(self, data: Any, status: int = 200) -> None:
         self._send(status, json.dumps(data, ensure_ascii=False, default=str).encode("utf-8"),
                    "application/json; charset=utf-8")
 
     def _body(self) -> dict:
-        length = int(self.headers.get("Content-Length") or 0)
-        if not length:
+        if not self.raw:
             return {}
         try:
-            data = json.loads(self.rfile.read(min(length, 20_000_000)).decode("utf-8"))
+            data = json.loads(self.raw[:20_000_000].decode("utf-8"))
         except ValueError:
             return {}
         return data if isinstance(data, dict) else {}
@@ -279,6 +301,34 @@ class Handler(BaseHTTPRequestHandler):
             return dashboard.export_png(str(body.get("name") or "ダッシュボード"),
                                         str(body.get("title") or "グラフ"), str(body.get("png") or ""))
         return {"ok": False, "message": f"知らない操作です: {path}"}
+
+
+class Handler(BaseHTTPRequestHandler):
+    """ブラウザ版の待ち受け(127.0.0.1)。中身は `Exchange` に渡すだけ。"""
+
+    server_version = "AllLinesGraph/" + app_config.VERSION
+
+    def log_message(self, fmt: str, *args: Any) -> None:  # 標準エラーへは出さない
+        log.debug("%s %s", self.address_string(), fmt % args)
+
+    def _handle(self, method: str) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(min(length, 20_000_000)) if length else b""
+        status, ctype, data = Exchange(method, self.path, dict(self.headers.items()), body,
+                                       transport="http", port=self.server.server_port).run()
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self) -> None:  # noqa: N802
+        self._handle("GET")
+
+    def do_POST(self) -> None:  # noqa: N802
+        self._handle("POST")
 
 
 def make_server(port: Optional[int] = None) -> ThreadingHTTPServer:
