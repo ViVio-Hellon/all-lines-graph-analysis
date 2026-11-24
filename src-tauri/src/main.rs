@@ -43,6 +43,10 @@ struct Shared {
 /// 起動前に出す知らせ(窓がまだ無いので OS の窓で)
 fn notice(text: &str) {
     eprintln!("{text}");
+    // ALG_QUIET=1 は窓を出さない(押す人のいない自動の確認で止まらないように)
+    if std::env::var("ALG_QUIET").map(|v| !v.trim().is_empty()).unwrap_or(false) {
+        return;
+    }
     #[cfg(windows)]
     unsafe {
         #[link(name = "user32")]

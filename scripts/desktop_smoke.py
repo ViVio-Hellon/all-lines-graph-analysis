@@ -115,7 +115,7 @@ def main() -> int:
     exe = Path(args.exe).resolve()
     work = Path(tempfile.mkdtemp(prefix="alg_smoke_"))
     env = dict(os.environ, ALG_LOCAL_DIR=str(work / "local"), ALG_DIST_DIR=str(work / "配布設定"),
-               ALG_LOCK_DIR=str(work / "locks"), ALG_ROOT=str(ROOT))
+               ALG_LOCK_DIR=str(work / "locks"), ALG_ROOT=str(ROOT), ALG_QUIET="1")
     (work / "locks").mkdir()
     from tests.sample_data import generate
     generate(work / "集計出力", ["L-1", "L-2", "L-3"], date.today() - timedelta(days=40), 40)
@@ -146,10 +146,18 @@ def _check(proc, exe, env, work, failures) -> int:
         failures.append(f"2) ポートで待ち受けています: {busy}")
     second = subprocess.run([str(exe)], env=env, cwd=str(ROOT), timeout=60)
     print(f"3) 2つ目の exe: 終了コード {second.returncode}")
-    browser = subprocess.run([sys.executable, str(ROOT / "start_app.py"), "--no-browser"], env=env,
-                             cwd=str(ROOT), capture_output=True, text=True, timeout=60)
-    print(f"4) ブラウザ版: 終了コード {browser.returncode} {browser.stderr.strip()[-80:]}")
-    if browser.returncode != 2:
+    try:
+        browser = subprocess.run([sys.executable, str(ROOT / "start_app.py"), "--no-browser"], env=env,
+                                 cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
+                                 errors="replace", timeout=60)
+    except subprocess.TimeoutExpired as exc:
+        out = (exc.stderr or b"")
+        out = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
+        failures.append(f"4) ブラウザ版が止まらず動き続けました: {out.strip()[-300:]}")
+        browser = None
+    if browser is not None:
+        print(f"4) ブラウザ版: 終了コード {browser.returncode} {browser.stderr.strip()[-80:]}")
+    if browser is not None and browser.returncode != 2:
         failures.append("4) ブラウザ版が止まりませんでした")
     proc.kill()
     proc.wait(timeout=30)

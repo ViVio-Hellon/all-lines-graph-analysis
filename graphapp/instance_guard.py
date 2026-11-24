@@ -162,7 +162,8 @@ def acquire(kind: str, app_id: str = app_config.APP_ID) -> Guard:
 def show_message(text: str) -> None:
     """コンソールの無い起動(pythonw)でも読めるように、Windows では窓で出す。"""
     print(text, file=sys.stderr)
-    if os.name == "nt":
+    # ALG_QUIET=1 は窓を出さない(押す人のいない自動の確認で、窓が出たまま止まらないように)
+    if os.name == "nt" and not os.environ.get("ALG_QUIET", "").strip():
         try:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, text, app_config.DISPLAY_NAME, 0x40)
