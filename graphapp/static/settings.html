@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定 | 全ライン グラフ分析</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="appbar__title">全ライン グラフ分析 <span class="appbar__ver" id="app-ver"></span></div>
+  <nav class="appbar__nav" aria-label="画面">
+    <span class="appbar__link appbar__link--off" title="次の段で作ります">ダッシュボード(準備中)</span>
+    <a class="appbar__link appbar__link--on" href="/settings" aria-current="page">設定</a>
+  </nav>
+  <div class="appbar__who" id="app-who"></div>
+</header>
+
+<main class="page">
+  <div class="tabs__bar" role="tablist" aria-label="設定の面">
+    <button class="tab" role="tab" data-tab="paths" aria-selected="true">参照設定<span class="tab__badge" id="badge-paths" hidden></span></button>
+    <button class="tab" role="tab" data-tab="dist" aria-selected="false">配布設定<span class="tab__badge" id="badge-dist" hidden></span></button>
+    <button class="tab" role="tab" data-tab="logs" aria-selected="false">ログ<span class="tab__badge" id="badge-logs" hidden></span></button>
+    <button class="tab" role="tab" data-tab="admin" aria-selected="false">管理者</button>
+  </div>
+
+  <!-- 鍵の帯(参照設定・配布設定の面の上に出す) -->
+  <div class="lockbar" id="lockbar">
+    <span class="badge" id="lock-badge"></span>
+    <span class="lead" id="lock-what"></span>
+    <span class="lockbar__form" id="lock-form">
+      <input id="lock-pw" type="password" size="14" placeholder="管理者パスワード" aria-label="管理者パスワード">
+      <button class="btn" type="button" id="lock-on">鍵を開ける</button>
+    </span>
+    <button class="btn btn--sm" type="button" id="lock-off" hidden>鍵を閉じる</button>
+    <span class="msg-inline" id="lock-msg"></span>
+  </div>
+
+  <!-- ============ 参照設定 ============ -->
+  <section class="panel" data-panel="paths">
+    <div class="card">
+      <div class="card__head">
+        <h2>参照設定</h2>
+        <span class="lead">このアプリが読みに行くフォルダと、書き出すフォルダ</span>
+        <button class="btn" type="button" id="paths-recheck">いまの状態を読み直す</button>
+      </div>
+      <p class="lead"><strong>パスを決めるのはこの面だけ</strong>です。欄に直接打っても、「フォルダを選ぶ…」で
+        辿ってもかまいません。空にして保存すると既定に戻ります。</p>
+      <div class="rule">
+        <div class="rule__title">集計データは<strong>大本だけ</strong>決めます</div>
+        <code class="rule__path"><span class="rule__mine">&lt;大本&gt;</span>\&lt;ライン&gt;\集計\&lt;yyyy.mm&gt;\&lt;dd&gt;\集計_&lt;yyyy-mm-dd&gt;_&lt;ライン&gt;.csv</code>
+        <div class="lead">日報管理ツール(all-tools)が書き出す形のままです。ライン・年月・日のフォルダはアプリがたどるので、
+          年や日付のフォルダを指定する必要はありません。ラインのフォルダや「集計」フォルダを指してしまっても読めます。</div>
+      </div>
+      <div id="paths-groups"></div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>集計データを確かめる</h2>
+        <span class="lead">大本からたどって、その期間の各日のCSVが見つかるか</span></div>
+      <div class="row">
+        <div class="field"><label for="chk-line">ライン</label><select id="chk-line"></select></div>
+        <div class="field"><label for="chk-start">いつから</label><input id="chk-start" type="date"></div>
+        <div class="field"><label for="chk-end">いつまで</label><input id="chk-end" type="date"></div>
+        <button class="btn btn--primary" type="button" id="chk-run">たどる</button>
+      </div>
+      <p class="lead" id="chk-summary"></p>
+      <div class="scroll-x"><table class="list" id="chk-table" hidden>
+        <thead><tr><th>日</th><th>集計</th><th>集計明細</th><th>停止内訳</th><th>フォルダ</th></tr></thead>
+        <tbody id="chk-rows"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ============ 配布設定 ============ -->
+  <section class="panel" data-panel="dist" hidden>
+    <div class="card">
+      <div class="card__head"><h2>いま置いてある配布設定</h2><span class="badge" id="dist-exists"></span></div>
+      <p class="lead" id="dist-meta"></p>
+      <div class="msg msg--error" id="dist-error" hidden></div>
+      <table class="list" id="dist-table" hidden><thead><tr><th>項目</th><th>値</th></tr></thead><tbody id="dist-rows"></tbody></table>
+      <p class="lead">置き場所: <code id="dist-path"></code> ── 起動用の <span id="dist-launchers"></span> と同じフォルダです。
+        <strong>配布先に関わるものはすべてこのフォルダ</strong>に入ります(設定.json・はじめに読む.txt)。</p>
+      <div id="dist-reading"></div>
+      <div class="row">
+        <button class="btn" type="button" id="dist-reapply">配布設定を読み込み直す(この端末の値も上書き)</button>
+        <button class="btn btn--danger" type="button" id="dist-remove">配布設定を消す</button>
+      </div>
+      <div class="msg" id="dist-msg2" hidden></div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>この端末の設定を配布設定にする</h2></div>
+      <p class="lead"><strong>いまこの端末に入っている値をそのまま書き出します</strong>(前の中身は置き換えます)。
+        値は参照設定の面で先に決めてください。配った先は起動したときに読み込みます。ただし
+        <strong>その端末で決めてある設定は読み込みません</strong>(上書きしない)。</p>
+      <fieldset class="checks" id="dist-items"><legend>設定(右は、書き出すと入る この端末の値)</legend></fieldset>
+      <h3>このまま配ると</h3>
+      <ul class="warnings" id="dist-warnings"></ul>
+      <div class="row"><button class="btn btn--primary" type="button" id="dist-export">配布設定を書き出す</button></div>
+      <div class="msg" id="dist-msg" hidden></div>
+    </div>
+  </section>
+
+  <!-- ============ ログ ============ -->
+  <section class="panel" data-panel="logs" hidden>
+    <div class="card">
+      <div class="card__head"><h2>エラーと操作の記録</h2><span class="lead">全部の端末のぶん(ログの出力パスを共有にしたとき)</span></div>
+      <p class="lead">書いている先: <code id="log-path"></code>
+        (<a href="#" data-goto="paths">参照設定の「ログの出力パス」</a>で変えられます)</p>
+      <div class="msg msg--warn" id="log-fallback" hidden></div>
+      <div class="row">
+        <div class="field"><label for="log-start">いつから</label><input id="log-start" type="date"></div>
+        <div class="field"><label for="log-end">いつまで</label><input id="log-end" type="date"></div>
+        <div class="field"><label for="log-level">種類</label>
+          <select id="log-level"><option value="">全部</option><option value="ERROR">エラー</option>
+            <option value="WARNING">注意</option><option value="操作">操作</option></select></div>
+        <div class="field"><label for="log-terminal">端末</label><select id="log-terminal"><option value="">全部</option></select></div>
+        <div class="field"><label for="log-q">文言で探す</label><input id="log-q" type="search" size="16"></div>
+        <button class="btn" type="button" id="log-reload">読み直す</button>
+      </div>
+      <p class="lead" id="log-counts"></p>
+      <div class="scroll-x"><table class="list list--nowrap" id="log-table">
+        <thead><tr><th>いつ</th><th>種類</th><th>端末</th><th>どこ</th><th>何と出た</th></tr></thead>
+        <tbody id="log-rows"></tbody></table></div>
+      <p class="lead">記録は半年(180日)残します。消すのは各端末が自分の書いたものだけです。</p>
+    </div>
+    <div class="card">
+      <div class="card__head"><h2>この端末の動いた記録</h2><span class="lead">起動・DB接続・取得時間・対象期間とライン</span>
+        <button class="btn btn--sm" type="button" id="tail-reload">読み直す</button></div>
+      <pre class="tail" id="log-tail"></pre>
+    </div>
+  </section>
+
+  <!-- ============ 管理者 ============ -->
+  <section class="panel" data-panel="admin" hidden>
+    <div class="card">
+      <div class="card__head"><h2>管理者パスワードを変える</h2></div>
+      <p class="lead">押し間違いを防ぐための関門です。変えていなければ日報管理ツールと同じ既定のパスワードで通ります。
+        変えた値は撹拌して保存します(平文では持ちません)。配布設定に入れれば配った先も同じになります。</p>
+      <div class="row">
+        <div class="field"><label for="pw-cur">いまのパスワード</label><input id="pw-cur" type="password" size="14"></div>
+        <div class="field"><label for="pw-new">新しいパスワード</label><input id="pw-new" type="password" size="14"></div>
+        <div class="field"><label for="pw-conf">もう一度</label><input id="pw-conf" type="password" size="14"></div>
+        <button class="btn btn--primary" type="button" id="pw-save">変える</button>
+      </div>
+      <div class="msg" id="pw-msg" hidden></div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h2>この端末だけに残すもの</h2></div>
+      <table class="list"><tbody id="local-rows"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<!-- フォルダを選ぶ窓(1つだけ持ち、押した欄の真下へ移して出す) -->
+<div class="browser" id="browser" hidden>
+  <div class="browser__head">
+    <span class="browser__drives" id="br-drives"></span>
+    <span class="browser__crumbs" id="br-crumbs"></span>
+    <button class="btn btn--sm" type="button" id="br-close">閉じる</button>
+  </div>
+  <div class="browser__hint" id="br-hint"></div>
+  <ul class="browser__list" id="br-list"></ul>
+  <div class="row"><button class="btn btn--primary" type="button" id="br-pick">このフォルダにする</button>
+    <code id="br-here"></code></div>
+</div>
+
+<script src="/static/settings.js"></script>
+</body>
+</html>

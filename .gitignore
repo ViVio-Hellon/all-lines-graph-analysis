@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/settings.local.json
+# 配布設定(設定画面で書き出す)。共有フォルダのパスと管理者パスワードのハッシュが入るので上げない
+/配布設定/
+/配布設定.作成中/
