@@ -42,7 +42,7 @@ jobs:
         working-directory: src-tauri
         run: cargo build --release
       - name: exe を起動して確かめる
-        run: python -u scripts/desktop_smoke.py --exe src-tauri/target/release/AllLinesGraph.exe
+        run: python -X utf8 -u scripts/desktop_smoke.py --exe src-tauri/target/release/AllLinesGraph.exe
       - uses: actions/upload-artifact@v4
         with:
           name: AllLinesGraph-windows

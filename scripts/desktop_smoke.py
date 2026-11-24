@@ -83,9 +83,11 @@ def descendants(root: int) -> set[int]:
 
 def python_pids() -> set[int]:
     if os.name == "nt":
-        out = subprocess.run(["wmic", "process", "where", "name like 'python%'", "get", "ProcessId,CommandLine"],
-                             capture_output=True, text=True).stdout
-        return {int(l.split()[-1]) for l in out.splitlines() if "bridge.py" in l and l.split()[-1].isdigit()}
+        # wmic は新しい Windows に無いので PowerShell で
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+              "Where-Object { $_.CommandLine -like '*bridge.py*' } | ForEach-Object { $_.ProcessId }")
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout
+        return {int(x) for x in out.split() if x.isdigit()}
     out = subprocess.run(["pgrep", "-f", "bridge.py"], capture_output=True, text=True).stdout
     return {int(x) for x in out.split()}
 
@@ -101,6 +103,12 @@ def wait_for(path_glob: Path, text: str, seconds: int) -> bool:
 
 
 def main() -> int:
+    # Windows の端末(cp1252 など)でも日本語の結果を出せるように
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", required=True)
     args = ap.parse_args()
