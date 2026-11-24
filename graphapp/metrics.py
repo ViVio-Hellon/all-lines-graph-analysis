@@ -9,9 +9,10 @@
         日別ならその日の値そのもの。週・月・年は日数ぶんの 1440分で割る(= 日別の値の平均)。
         直を1つに絞れば (1440 − その直の停止) ÷ 1440 で、集計CSVの「稼働率(%)」と同じ。
         all-tools と同じく 0 未満でも切り上げない。
-    生産性(t/h) = 重量(t) ÷ ((1440分 × 直の数 − 停止合計) ÷ 60)
-        (`ShiftAggregate.productivity_t_per_h` の分母「稼働時間」を直の数ぶん足したもの。
-         稼働時間が 0 以下なら 0)
+    生産性(t/h) = 重量(t) ÷ ((1440分 × 日数 − 停止合計) ÷ 60)
+        稼働率と同じ考え方(その日の全直を足して1日 = 1440分)。all-tools で全直を足した行の
+        `ShiftAggregate.productivity_t_per_h`(重量 ÷ (1440 − 停止合計)/60)と同じ。
+        週・月・年は日数ぶんの1440分から停止を引いた時間で割る。稼働時間が 0 以下なら 0
   直1つ・1日なら、どちらも集計CSVの値と同じになる(テストで確かめている)。
 * **欠損と 0 を分ける。** その期間に1日もデータが無ければ None(グラフでは空き)。
 * 取れない項目は一覧に出すが選べない(理由を出す)。
@@ -100,7 +101,7 @@ METRICS: tuple[Metric, ...] = (
     Metric("handling", "ハンドリング停止", "停止分析", "分", "sum", "summary", "集計CSVの「ハンドリング停止(分)」"),
     # 生産性
     Metric("productivity", "生産性(時間当たり生産重量)", "生産性", "t/h", "ratio", "summary",
-           "重量(t)÷稼働時間(h)。all-tools の productivity_t_per_h と同じ式", digits=2),
+           "重量(t)÷((1440分×日数−停止合計)÷60)。稼働率と同じく、その日の全直を足して出す", digits=2),
     Metric("sheets_per_hour", "時間当たり生産枚数", "生産性", "枚/h", "ratio", "summary",
            available=False, reason="all-tools の集計に無い数です。独自の式で出さない決まりのため、"
            "式が決まるまで選べません"),
@@ -186,8 +187,8 @@ def _ratio(day_rows: list[list[ShiftRow]], key: str) -> Optional[float]:
         # 「日別稼働率推移」と同じ: その日の全直を足して 1440分で割る(期間は日数ぶん)
         whole_days = MINUTES_PER_DAY * len(days)
         return (whole_days - stopped) / whole_days * 100
-    whole = MINUTES_PER_DAY * len(usable)
-    operating = whole - stopped
+    # 生産性も同じ考え方: 1日 = 1440分、期間は日数ぶん(直の数ぶんにはしない)
+    operating = MINUTES_PER_DAY * len(days) - stopped
     weight = _sum([r.weight_t for r in usable])
     if weight is None:
         return None

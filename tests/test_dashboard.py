@@ -68,9 +68,12 @@ class MetricsTest(TempEnv):
     def test_productivity_matches_shift_formula_and_rolls_up(self):
         one = self._compute("productivity", "bar", shift="1直", start=D1, end=D1)
         self.assertAlmostEqual(one["series"][0]["values"][0], 6.0 / ((1440 - 90) / 60))
+        # その日の全直を足す: 11/2 は 9t ÷ ((1440 − 120)/60)(稼働率と同じ考え方)
+        day = self._compute("productivity", "bar", start=D1, end=D1)
+        self.assertAlmostEqual(day["series"][0]["values"][0], 9.0 / ((1440 - 120) / 60))
         week = self._compute("productivity", "bar", grain="week")
-        # 11/2(2直)と 11/3(1直)の3直ぶん: 9t ÷ ((1440×3 − 120)/60)
-        self.assertAlmostEqual(week["series"][0]["values"][0], 9.0 / ((4320 - 120) / 60))
+        # 11/2 と 11/3 の2日ぶん: 9t ÷ ((1440×2 − 120)/60)。直の数(3)ぶんにはしない
+        self.assertAlmostEqual(week["series"][0]["values"][0], 9.0 / ((2880 - 120) / 60))
 
     def test_ratio_cannot_be_stacked_or_pie(self):
         self.assertTrue(metrics.BY_KEY["rate"].charts()["pie"])
