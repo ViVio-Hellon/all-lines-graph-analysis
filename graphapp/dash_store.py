@@ -101,6 +101,8 @@ def normalize(config: Any) -> dict:
         # 1ラインずつ切り替えて見る(ラインを指定したカードは切り替わらない)
         "switch": bool(common.get("switch", False)),
         "current": str(common.get("current") or ""),
+        # 自動で読み直す(集計CSVが書き足されたら、開いたままのグラフにも出す)
+        "auto_refresh": bool(common.get("auto_refresh", True)),
     }
     charts = []
     for raw in c.get("charts") or []:
@@ -126,6 +128,12 @@ def normalize(config: Any) -> dict:
                 **({"period": _period(own.get("period"))} if "period" in own else {}),
                 **({"grain": own["grain"]} if own.get("grain") in metrics.GRAINS else {}),
                 **({"shift": str(own.get("shift") or "")} if "shift" in own else {}),
+            },
+            "combo": {
+                "bars": "total" if ((raw.get("combo") or {}).get("bars") == "total") else "stacked",
+                "line": (raw.get("combo") or {}).get("line") if (raw.get("combo") or {}).get("line") in ("cumulative", "metric", "none") else "cumulative",
+                "metric2": (raw.get("combo") or {}).get("metric2") if (raw.get("combo") or {}).get("metric2") in metrics.BY_KEY else "rate",
+                "target": bool((raw.get("combo") or {}).get("target", True)),
             },
             "style": {
                 "color": str((raw.get("style") or {}).get("color") or "")[:20],

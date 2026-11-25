@@ -14,7 +14,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from . import agg_data, agg_store, config, metrics
+from . import agg_data, agg_store, config, line_target, metrics
 from .file_names import safe_name
 from .logging_setup import note, timed
 
@@ -62,6 +62,8 @@ def graph(spec: dict) -> dict:
     roots = config.SETTINGS.agg_roots()
     known = agg_store.lines(roots)
     lines = [str(l) for l in (spec.get("lines") or []) if str(l)] or known
+    combo = _combo(spec, metric) if chart == "combo" else None
+    targets = line_target.load(config.SETTINGS.line_target_path) if combo and combo["target"] else None
     out = []
     with timed(f"グラフのデータ({metric.label}/{metrics.CHART_LABELS[chart]})", lines=lines,
                start=start, end=end) as info:
@@ -72,14 +74,66 @@ def graph(spec: dict) -> dict:
                 continue
             days = agg_data.load(roots, line, start, end)
             count += len(days)
-            result = metrics.compute(days, metric, start, end, grain, chart, shift)
+            if combo is not None:
+                result = _combo_result(days, metric, start, end, grain, shift, combo, targets, line)
+            else:
+                result = metrics.compute(days, metric, start, end, grain, chart, shift)
             result["data_days"] = len(days)
             result["source_days"] = sum(1 for d in days if _has_source(d, metric))
             out.append({"line": line, "error": "", "result": result})
         info["days"] = count
     return {"metric": metric.to_dict(), "chart": chart, "start": start.isoformat(), "end": end.isoformat(),
-            "grain": grain, "shift": shift, "lines": out,
+            "grain": grain, "shift": shift, "lines": out, "combo": combo,
+            "targets": targets.to_dict(known) if targets is not None else None,
             "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def _combo(spec: dict, metric: metrics.Metric) -> dict:
+    """組み合わせの決め方を形にそろえる。
+
+    bars:   stacked(直ごとに積み上げ)/ total(合計の棒)
+    line:   cumulative(累計を右の軸に。生産枚数なら目標の45度線も)/ metric(別の項目を右の軸に)
+    """
+    raw = spec.get("combo") if isinstance(spec.get("combo"), dict) else {}
+    line_kind = raw.get("line") if raw.get("line") in ("cumulative", "metric", "none") else "cumulative"
+    metric2 = raw.get("metric2") if raw.get("metric2") in metrics.BY_KEY else "rate"
+    m2 = metrics.BY_KEY[metric2]
+    if line_kind == "metric" and (not m2.available or m2.kind == "breakdown"):
+        raise RequestError(f"「{m2.label}」は線に重ねられません(内訳・取れない項目は不可)。")
+    return {"bars": "total" if raw.get("bars") == "total" else "stacked", "line": line_kind,
+            "metric2": metric2,
+            # 45度線は「生産枚数」の累計にだけ引く(目標は1日あたりの枚数)
+            "target": line_kind == "cumulative" and metric.key == "sheets" and raw.get("target", True) is not False}
+
+
+def _combo_result(days, metric, start, end, grain, shift, combo, targets, line) -> dict:
+    """棒(左の軸)と線(右の軸)を1つに。線は overlays に入れる。"""
+    bars = metrics.compute(days, metric, start, end, grain,
+                           "combo_stacked" if combo["bars"] == "stacked" else "bar", shift)
+    overlays: list[dict] = []
+    if combo["line"] == "cumulative":
+        running, seen, values = 0.0, False, []
+        for v in bars["totals"]:
+            if v is not None:
+                running += v
+                seen = True
+            values.append(running if seen else None)      # データの無い区切りは横ばい
+        overlays.append({"name": "日毎累計" if grain == "day" else "累計", "values": values,
+                         "unit": metric.unit, "kind": "cumulative"})
+        if combo["target"] and targets is not None:
+            goal = targets.of(line)
+            if goal:
+                overlays.append({"name": "目標値", "values": line_target.cumulative(goal, bars["days"]),
+                                 "unit": metric.unit, "kind": "target", "per_day": goal})
+            else:
+                bars["target_note"] = (targets.error or f"ライン毎目標に {line} がありません")
+    elif combo["line"] == "metric":
+        m2 = metrics.BY_KEY[combo["metric2"]]
+        second = metrics.compute(days, m2, start, end, grain, "line", shift)
+        overlays.append({"name": m2.label, "values": second["series"][0]["values"],
+                         "unit": m2.unit, "kind": "metric", "digits": m2.digits})
+    bars["overlays"] = overlays
+    return bars
 
 
 def _has_source(day: agg_data.DayData, metric: metrics.Metric) -> bool:

@@ -6,6 +6,8 @@
  *     opts.series   [{name, values}]   values の null は「データなし」(0 と描き分ける)
  *     opts.colors   系列(円は項目)ごとの色
  *     opts.unit, opts.digits, opts.legend, opts.showValues, opts.yMin, opts.yMax
+ *     組み合わせ(type "combo"): opts.stackBars で直ごとに積み上げ、opts.overlays = [{name, values, unit, color, kind}]
+ *     を右の軸の線で重ねる(累計・目標の45度線・別の項目)。左右の軸は別の目盛り
  *
  * 色・字は属性で直に入れる(CSS のクラスに頼らない) ── 画像で保存するとき、SVG を
  * そのまま画像にするので、外のスタイルが効かないため。
@@ -72,7 +74,8 @@
     for (const it of items) {
       const w = 16 + it.name.length * 11 + 12;
       if (cx + w > x + maxW && cx > x) { cx = x; cy += 16; }
-      el("rect", { x: cx, y: cy - 9, width: 10, height: 10, rx: 2, fill: it.color }, svg);
+      if (it.line) el("rect", { x: cx - 2, y: cy - 5, width: 14, height: 3, rx: 1, fill: it.color }, svg);
+      else el("rect", { x: cx, y: cy - 9, width: 10, height: 10, rx: 2, fill: it.color }, svg);
       text(svg, cx + 14, cy, it.name, { "font-size": 11 });
       cx += w;
     }
@@ -108,9 +111,13 @@
 
     if (opts.type === "pie") return pie(svg, opts, W, H, colors, digits);
 
-    const showLegend = opts.legend && opts.series.length > 1;
+    const combo = opts.type === "combo";
+    const overlays = combo ? (opts.overlays || []).filter((o) => o.values.some((v) => v !== null && v !== undefined)) : [];
+    if (combo) opts = Object.assign({}, opts, { type: opts.stackBars ? "stacked" : "bar" });
+    const showLegend = opts.legend && (opts.series.length > 1 || overlays.length);
     let legendH = 0;
-    if (showLegend) legendH = legend(svg, opts.series.map((s, i) => ({ name: s.name, color: colors[i % colors.length] })), 8, 14, W - 16) + 4;
+    if (showLegend) legendH = legend(svg, opts.series.map((s, i) => ({ name: s.name, color: colors[i % colors.length] }))
+      .concat(overlays.map((o) => ({ name: o.name, color: o.color, line: true }))), 8, 14, W - 16) + 4;
 
     const horizontal = opts.type === "hbar";
     const { sc, any } = axes(opts, horizontal ? W - 60 : H - legendH - (opts.unit ? 20 : 10) - 34);
@@ -146,7 +153,15 @@
 
     // 縦(棒・積み上げ・折れ線)
     const left = 10 + Math.max(...sc.ticks.map((t) => fmt(t, sc.step < 1 ? 1 : 0).length)) * 7 + 4;
-    const right = 10, top = 10 + legendH + (opts.unit ? 10 : 0), bottom = 34;
+    // 右の軸(組み合わせの線)の目盛り
+    let rsc = null, rightW = 10;
+    if (overlays.length) {
+      let hi = 0;
+      overlays.forEach((o) => o.values.forEach((v) => { if (v !== null && v !== undefined) hi = Math.max(hi, v); }));
+      rsc = niceScale(0, hi || 1, Math.max(2, Math.min(6, Math.floor((H - legendH - 54) / 26))));
+      rightW = 12 + Math.max(...rsc.ticks.map((t) => fmt(t, rsc.step < 1 ? 1 : 0).length)) * 7;
+    }
+    const right = rightW, top = 10 + legendH + (opts.unit || overlays.length ? 10 : 0), bottom = 34;
     const pw = W - left - right, ph = H - top - bottom;
     if (ph < 24 || pw < 40) { svg.innerHTML = ""; emptyNote(svg, W, H, "小さすぎて描けません(カードを広げてください)"); return svg; }
     const y = (v) => top + ph - (v - sc.min) / (sc.max - sc.min) * ph;
@@ -214,6 +229,36 @@
       });
       if (opts.showValues && opts.type === "stacked" && n <= 40 && base) text(svg, left + band * i + band / 2, y(base) - 3, fmt(base, digits), { "text-anchor": "middle", "font-size": 9.5 });
     });
+    if (rsc) {
+      // 右の軸と、重ねる線
+      const yr = (v) => top + ph - (v - rsc.min) / (rsc.max - rsc.min) * ph;
+      const unitR = [...new Set(overlays.map((o) => o.unit))].join("・");
+      text(svg, W - 4, top - 6, `(${unitR})`, { "text-anchor": "end", "font-size": 10, fill: css("--chart-muted", "#7a8496") });
+      for (const t of rsc.ticks) {
+        if (t < rsc.min || t > rsc.max) continue;
+        text(svg, left + pw + 5, yr(t) + 4, fmt(t, rsc.step < 1 ? 1 : 0), { "font-size": 10, fill: css("--chart-muted", "#7a8496") });
+      }
+      overlays.forEach((o) => {
+        let d = "", open = false;
+        o.values.forEach((v, i) => {
+          if (v === null || v === undefined) { open = false; return; }
+          d += `${open ? "L" : "M"}${(left + band * i + band / 2).toFixed(1)},${yr(v).toFixed(1)}`;
+          open = true;
+        });
+        if (d) el("path", { d, fill: "none", stroke: o.color, "stroke-width": o.kind === "target" ? 2.5 : 3, "stroke-linejoin": "round" }, svg);
+        if (o.kind !== "target") {
+          o.values.forEach((v, i) => {
+            if (v === null || v === undefined || (i > 0 && o.values[i - 1] === v && opts.series.every((s) => s.values[i] === null))) return;
+            const c = el("rect", { x: left + band * i + band / 2 - 4, y: yr(v) - 4, width: 8, height: 8, rx: 2,
+                                    fill: o.marker || o.color }, svg);
+            tip(c, `${opts.labels[i]} ${o.name}: ${fmt(v, o.digits || digits)} ${o.unit || ""}`);
+          });
+        } else {
+          const last = o.values.reduce((a, v, i) => (v !== null && v !== undefined ? i : a), -1);
+          if (last >= 0) { const r = el("circle", { cx: left + band * last + band / 2, cy: yr(o.values[last]), r: 0.1, fill: o.color }, svg); tip(r, `目標 ${fmt(o.values[last], 0)}`); }
+        }
+      });
+    }
     return svg;
   }
 

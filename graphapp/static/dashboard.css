@@ -132,3 +132,13 @@
 .astep__n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; }
 .addline { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .addline.is-common > :not(.own__head) { opacity: .45; pointer-events: none; }
+
+/* 切り替え表示の帯・自動更新 */
+.switch-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: var(--sp-3); padding: 8px 12px;
+  border-radius: var(--radius); background: #eef4ff; border: 1px solid #b9cdf2; font-size: 14px; }
+.switch-banner .btn { margin-left: auto; }
+.auto { display: inline-flex; flex-direction: column; font-size: 12.5px; line-height: 1.3; }
+.auto .lead { font-size: 11.5px; }
+.comboset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.comboset h3 { margin: 0; }
+@media print { .switch-banner, .auto { display: none !important; } }

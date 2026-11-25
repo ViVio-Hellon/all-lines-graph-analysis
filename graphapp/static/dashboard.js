@@ -21,7 +21,8 @@ const CACHE = new Map();  // 条件 → 取得結果
 /* ------------------------------------------------------------ 色 */
 // ラインの色は原則統一(どのグラフでも同じラインは同じ色)
 const LINE_COLORS = ["#2f6fd6", "#d9792b", "#2e9a5b", "#b8434c", "#7a55c7", "#1f9aa8", "#b38a1d", "#c2548f", "#4f6b8a", "#6f9d2b", "#995c3c", "#3e8fd6"];
-const SHIFT_COLORS = { "1直": "#3f7fe0", "2直": "#2e9a5b", "3直": "#d9792b", "日勤": "#8a5cc9", "4直": "#1f9aa8", "5直": "#b38a1d" };
+// 直の色は日報管理ツール・Excel のグラフ(1直=青・2直=橙・3直=灰)に合わせる
+const SHIFT_COLORS = { "1直": "#4472c4", "2直": "#ed7d31", "3直": "#a5a5a5", "日勤": "#8a5cc9", "4直": "#1f9aa8", "5直": "#b38a1d" };
 const KIND_COLORS = { "管理ロス設備停止": "#4f6b8a", "段取り・突発停止": "#d9542b", "ハンドリング停止": "#d9a52b", "その他停止": "#9aa3b1" };
 const CAT_COLORS = ["#2f6fd6", "#d9792b", "#2e9a5b", "#b8434c", "#7a55c7", "#1f9aa8", "#b38a1d", "#c2548f", "#9aa3b1"];
 const lineColor = (line) => LINE_COLORS[Math.max(0, (META?.lines || []).indexOf(line)) % LINE_COLORS.length];
@@ -79,17 +80,18 @@ function defaultConfig() {
   return {
     version: 1,
     common: { all_lines: true, lines: [], period: { preset: "this_month", start: "", end: "" }, grain: "day", shift: "",
-              switch: false, current: "" },
+              switch: false, current: "", auto_refresh: true },
     charts: [
       pin(newChart("weight", "bar", 0, 0, 4, 5), 0),
       pin(newChart("rate", "line", 4, 0, 4, 5), 1),
       pin(newChart("stop_reason_min", "pie", 8, 0, 4, 5), 2),
-      pin(newChart("sheets", "stacked", 0, 5, 4, 5), 0),
+      pin(newChart("sheets", "combo", 0, 5, 8, 6), 0),
     ],
   };
 }
 function newChart(metric, chart, x, y, w, h) {
   return { id: "g" + Math.random().toString(36).slice(2, 9), title: "", metric, chart, x, y, w, h, own: {},
+           combo: { bars: "stacked", line: "cumulative", metric2: "rate", target: true },
            style: { color: "", legend: true, labels: false, same_scale: true, y_min: null, y_max: null } };
 }
 const C = () => DASH.config;
@@ -101,15 +103,27 @@ function commonLines() {
   if (!c.switch) return picked;
   return picked.includes(c.current) ? [c.current] : picked.slice(0, 1);
 }
-/* グラフの名前。ラインを指定したカードは「L-1 生産重量」のようにラインを頭に付ける */
+/* 切り替え表示で、いま出しているライン(切り替えていなければ null) */
+function switchedLine() {
+  const c = C().common;
+  if (!c.switch) return null;
+  const picked = c.all_lines ? META.lines : c.lines;
+  return picked.includes(c.current) ? c.current : (picked[0] || null);
+}
+/* グラフの名前。1ラインのカードは「L-1 生産重量」のようにラインを頭に付ける */
 function titleOf(g) {
   if (g.title) return g.title;
   const label = metricOf(g.metric).label;
+  const sw = switchedLine();
+  if (sw) return `${sw} ${label}`;
   return g.own.lines && g.own.lines.length === 1 ? `${g.own.lines[0]} ${label}` : label;
 }
 function conditions(g) {
   const c = C().common;
-  const lines = g.own.lines || commonLines();
+  // 切り替え表示のあいだは、ライン指定のカードも含めて全部が選んだラインだけを出す
+  // (切り替えをやめれば、それぞれのカードのラインに戻る)
+  const sw = switchedLine();
+  const lines = sw ? [sw] : (g.own.lines || commonLines());
   return {
     lines,
     period: g.own.period || c.period,
@@ -120,7 +134,7 @@ function conditions(g) {
 function specOf(g) {
   const k = conditions(g);
   const r = resolvePeriod(k.period);
-  return { metric: g.metric, chart: g.chart, lines: k.lines, start: r.start, end: r.end, grain: k.grain, shift: k.shift, title: titleOf(g) };
+  return { metric: g.metric, chart: g.chart, combo: g.chart === "combo" ? g.combo : undefined, lines: k.lines, start: r.start, end: r.end, grain: k.grain, shift: k.shift, title: titleOf(g) };
 }
 function markDirty() {
   const dirty = JSON.stringify(C()) !== SAVED;
@@ -158,7 +172,11 @@ function renderCommon() {
   $("c-switch").hidden = !c.switch;
   $("c-switch").innerHTML = picked.map((l) => `<button class="ltab" type="button" role="tab" data-line="${esc(l)}" aria-selected="${l === now}">`
       + `<span class="chip__dot" style="background:${lineColor(l)}"></span>${esc(l)}</button>`).join("")
-    + (picked.length ? `<span class="lead">← → キーでも切り替えられます。ラインを指定したカードは切り替わりません</span>` : `<span class="lead">ラインを選んでください</span>`);
+    + (picked.length ? `<span class="lead">← → キーでも切り替え。<b>ページのすべてのグラフが、このラインだけ</b>になります(やめると元のラインに戻ります)</span>` : `<span class="lead">ラインを選んでください</span>`);
+  $("switch-banner").hidden = !c.switch || !now;
+  if (now) $("switch-banner").innerHTML = `<span class="chip__dot" style="background:${lineColor(now)}"></span><b>${esc(now)}</b> だけを表示しています`
+    + `<button class="btn btn--sm" type="button" data-view-off>すべて並べる表示に戻す</button>`;
+  $("auto-on").checked = c.auto_refresh !== false;
   fillSelect($("c-preset"), PRESETS, c.period.preset);
   const r = resolvePeriod(c.period);
   $("c-start").value = r.start; $("c-end").value = r.end;
@@ -173,6 +191,7 @@ $("c-view").onclick = (e) => {
   if (c.switch && !c.current) c.current = commonLines()[0] || "";
   changed(true);
 };
+$("switch-banner").onclick = (e) => { if (e.target.closest("[data-view-off]")) { C().common.switch = false; changed(true); } };
 $("c-switch").onclick = (e) => { const b = e.target.closest("[data-line]"); if (b) { C().common.current = b.dataset.line; changed(true); } };
 document.addEventListener("keydown", (e) => {
   const c = DASH && C().common;
@@ -225,12 +244,13 @@ function boardHeight() {
 
 function tagText(g) {
   const own = Object.keys(g.own).filter((k) => k !== "lines").map((k) => ({ period: "期間", grain: "単位", shift: "直" }[k]));
-  const pinned = g.own.lines ? `<span class="badge badge--pin" title="このカードはラインを指定しています(共通条件や切り替えでは変わりません)">ライン指定</span>`
-    : C().common.switch ? `<span class="badge badge--todo" title="上のライン切り替えに付いてきます">切り替え表示</span>` : "";
+  const pinned = switchedLine() ? `<span class="badge badge--todo" title="上のタブで選んだラインを出しています">切り替え中</span>`
+    : g.own.lines ? `<span class="badge badge--pin" title="このカードはラインを指定しています(共通条件では変わりません)">ライン指定</span>` : "";
   return pinned + (own.length ? `<span class="badge badge--todo" title="共通条件ではなく、このグラフだけの条件です">個別: ${own.join("・")}</span>` : "");
 }
 function headDot(g) {
-  return g.own.lines && g.own.lines.length === 1 ? `<span class="chip__dot" style="background:${lineColor(g.own.lines[0])}"></span>` : "";
+  const one = switchedLine() || (g.own.lines && g.own.lines.length === 1 ? g.own.lines[0] : null);
+  return one ? `<span class="chip__dot" style="background:${lineColor(one)}"></span>` : "";
 }
 function renderBoard() {
   const board = $("board");
@@ -326,8 +346,9 @@ async function fetchData(spec) {
 function colorsFor(g, line, result) {
   const m = metricOf(g.metric);
   const names = result.mode === "category" && g.chart === "pie" ? result.labels : result.series.map((s) => s.name);
-  if (g.chart === "pie" || g.chart === "stacked") {
-    return names.map((n, i) => SHIFT_COLORS[n] || KIND_COLORS[n] || CAT_COLORS[i % CAT_COLORS.length]);
+  if (g.chart === "pie" || g.chart === "stacked" || g.chart === "combo") {
+    if (g.chart === "combo" && result.series.length === 1) return [g.style.color || lineColor(line)];
+    return names.map((n, i) => SHIFT_COLORS[n] || SHIFT_COLORS[String(n).replace(/合計$/, "")] || KIND_COLORS[n] || CAT_COLORS[i % CAT_COLORS.length]);
   }
   if (m.kind === "breakdown" || result.series.length > 1) return names.map((n, i) => CAT_COLORS[i % CAT_COLORS.length]);
   return [g.style.color || lineColor(line)];
@@ -335,7 +356,7 @@ function colorsFor(g, line, result) {
 function maxOf(result, chart) {
   let hi = 0;
   result.labels.forEach((_, i) => {
-    if (chart === "stacked") hi = Math.max(hi, result.series.reduce((a, s) => a + (s.values[i] || 0), 0));
+    if (chart === "stacked" || chart === "combo") hi = Math.max(hi, result.series.reduce((a, s) => a + (s.values[i] || 0), 0));
     else result.series.forEach((s) => { if (s.values[i] !== null) hi = Math.max(hi, s.values[i]); });
   });
   return hi;
@@ -370,7 +391,9 @@ async function loadCard(card, g) {
     const r = it.result;
     const total = r && r.total !== null && r.total !== undefined ? `${m.kind === "ratio" ? "期間" : "計"} ${ALGChart.fmt(r.total, m.digits)} ${m.unit}` : "";
     const missing = r && r.mode === "time" ? r.days.filter((d) => d === 0).length : 0;
-    const note = r ? `データのある日 ${r.data_days}日${missing ? ` · データなし ${missing}区切り` : ""}${m.source !== "summary" && r.source_days < r.data_days ? ` · ${m.source === "stop" ? "停止内訳" : "集計明細"}CSVのある日 ${r.source_days}日` : ""}` : "";
+    const goal = r && (r.overlays || []).find((o) => o.kind === "target");
+    const note = r ? `データのある日 ${r.data_days}日${missing ? ` · データなし ${missing}区切り` : ""}${m.source !== "summary" && r.source_days < r.data_days ? ` · ${m.source === "stop" ? "停止内訳" : "集計明細"}CSVのある日 ${r.source_days}日` : ""}`
+      + (goal ? ` · 目標 ${ALGChart.fmt(goal.per_day, 0)}${m.unit}/日(45度線)` : "") + (r.target_note ? ` · 目標線なし: ${r.target_note}` : "") : "";
     return `<div class="sub" data-i="${i}"><div class="sub__head"><span class="chip__dot" style="background:${lineColor(it.line)}"></span>${esc(it.line)}<span class="sub__total">${esc(total)}</span></div>
       ${it.error ? `<div class="sub__err">${esc(it.error)}</div>` : `<div class="sub__chart"></div><div class="sub__note">${esc(note)}</div>`}</div>`;
   }).join("");
@@ -379,6 +402,10 @@ async function loadCard(card, g) {
     const host = body.querySelector(`.sub[data-i="${i}"] .sub__chart`);
     ALGChart.render(host, {
       type: g.chart, labels: it.result.labels, series: it.result.series, unit: m.unit, digits: m.digits,
+      stackBars: g.chart === "combo" && g.combo.bars === "stacked",
+      overlays: (it.result.overlays || []).map((o) => Object.assign({}, o, {
+        color: o.kind === "target" ? "#e0201b" : o.kind === "cumulative" ? "#f2b705" : "#2b2f8f",
+        marker: o.kind === "cumulative" ? "#7a3fb0" : undefined })),
       colors: colorsFor(g, it.line, it.result), legend: g.style.legend, showValues: g.style.labels,
       yMin: typeof g.style.y_min === "number" ? g.style.y_min : undefined,
       yMax: typeof g.style.y_max === "number" ? g.style.y_max : undefined, scaleMax,
@@ -411,7 +438,7 @@ window.addEventListener("afterprint", () => renderBoard());
  *   「共通条件に従う」を選ぶと、共通条件(と切り替え表示)に付いてくるカードになる。
  */
 const ADD = { picks: [], type: "auto", tag: "", mode: "pin", lines: [], split: true };
-function suggest(m) { return m.kind === "ratio" ? "line" : m.kind === "breakdown" ? "pie" : "bar"; }
+function suggest(m) { return m.key === "sheets" ? "combo" : m.kind === "ratio" ? "line" : m.kind === "breakdown" ? "pie" : "bar"; }
 function typeButtons(host, m, current, onPick) {
   host.innerHTML = Object.entries(META.charts).map(([k, label]) => {
     const why = m ? m.charts[k] : "項目を先に選んでください";
@@ -527,6 +554,16 @@ function openDrawer(id) {
   $("dr-same").checked = g.style.same_scale;
   $("dr-ymin").value = g.style.y_min ?? "";
   $("dr-ymax").value = g.style.y_max ?? "";
+  // 組み合わせ
+  $("dr-combo").hidden = g.chart !== "combo";
+  if (!g.combo) g.combo = { bars: "stacked", line: "cumulative", metric2: "rate", target: true };
+  $("dr-combo-bars").value = g.combo.bars;
+  document.querySelectorAll('input[name="dr-combo-line"]').forEach((r) => { r.checked = r.value === g.combo.line; });
+  $("dr-combo-target").checked = g.combo.target !== false;
+  $("dr-combo-target-row").hidden = g.metric !== "sheets";
+  $("dr-combo-metric2").innerHTML = META.metrics.filter((x) => x.available && x.kind !== "breakdown" && x.key !== g.metric)
+    .map((x) => `<option value="${x.key}">${esc(x.label)}(${esc(x.unit)})</option>`).join("");
+  $("dr-combo-metric2").value = g.combo.metric2;
 }
 function closeDrawer() {
   ACTIVE = null;
@@ -535,6 +572,10 @@ function closeDrawer() {
 }
 const activeChart = () => C().charts.find((x) => x.id === ACTIVE);
 $("dr-close").onclick = closeDrawer;
+$("dr-combo-bars").onchange = () => { activeChart().combo.bars = $("dr-combo-bars").value; changed(false); };
+document.querySelectorAll('input[name="dr-combo-line"]').forEach((r) => { r.onchange = () => { activeChart().combo.line = r.value; changed(false); }; });
+$("dr-combo-target").onchange = () => { activeChart().combo.target = $("dr-combo-target").checked; changed(false); };
+$("dr-combo-metric2").onchange = () => { const g = activeChart(); g.combo.metric2 = $("dr-combo-metric2").value; g.combo.line = "metric"; changed(false); };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); $("add-modal").hidden = true; $("dash-pop").hidden = true; } });
 $("dr-name").oninput = () => { const g = activeChart(); g.title = $("dr-name").value; markDirty(); const t = document.querySelector(`.gcard[data-id="${g.id}"] .gcard__title`); if (t) t.textContent = titleOf(g); };
 $("dr-metric").onchange = () => {
@@ -623,7 +664,37 @@ $("dash-del").onclick = async () => {
 };
 
 /* ------------------------------------------------------------ 出力 */
-$("reload").onclick = () => { CACHE.clear(); renderBoard(); say(true, "データを読み直しました。"); };
+$("reload").onclick = () => { CACHE.clear(); renderBoard(); markRefreshed(); say(true, "データを読み直しました。"); };
+
+/* 集計データの自動更新: 1分ごとに取り直し、**数が変わったカードだけ**描き直す。
+ * 画面が裏にある・設定や追加の窓を開いている・カードを動かしている間は休む */
+const AUTO_SECONDS = 60;
+function markRefreshed() {
+  $("auto-at").textContent = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+}
+async function autoRefresh() {
+  if (!DASH || C().common.auto_refresh === false || document.hidden || !$("drawer").hidden || !$("add-modal").hidden
+      || document.querySelector(".gcard.is-moving, .uidlg")) return;
+  let changedCards = 0;
+  for (const card of document.querySelectorAll(".gcard")) {
+    const g = C().charts.find((x) => x.id === card.dataset.id);
+    if (!g) continue;
+    const spec = specOf(g);
+    if (!spec.lines.length) continue;
+    const fresh = await api("/api/dash/data", spec);
+    if (!fresh.ok) continue;
+    const key = JSON.stringify(spec);
+    const before = card._data ? JSON.stringify(card._data.lines) : "";
+    CACHE.set(key, Promise.resolve(fresh));
+    if (JSON.stringify(fresh.lines) !== before) { changedCards++; loadCard(card, g); }
+  }
+  markRefreshed();
+  if (changedCards) $("auto-note").textContent = `(${changedCards}枚を新しいデータで描き直しました)`;
+  else $("auto-note").textContent = "";
+}
+setInterval(autoRefresh, AUTO_SECONDS * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
+$("auto-on").onchange = () => { C().common.auto_refresh = $("auto-on").checked; markDirty(); if ($("auto-on").checked) autoRefresh(); };
 $("print").onclick = () => window.print();
 $("export-csv").onclick = async () => {
   if (!C().charts.length) return say(false, "書き出すグラフがありません。");
@@ -680,4 +751,5 @@ async function rootsNote() {
   if (last) await openDash(last.id);
   else if ((list.items || []).length) await openDash(list.items[0].id);
   else use({ name: "新しいダッシュボード", config: defaultConfig() });
+  markRefreshed();
 })();

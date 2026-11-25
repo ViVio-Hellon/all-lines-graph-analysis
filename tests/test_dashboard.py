@@ -222,3 +222,55 @@ class DashApiTest(TempEnv):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TargetAndComboTest(TempEnv):
+    def setUp(self) -> None:
+        super().setUp()
+        from graphapp import agg_data
+        agg_data.clear_cache()
+        self.root = self.tmp / "集計出力"
+        write_day(self.root, "L-1", D1, [shift_row(D1, "L-1", "1直", 50, 0.5, {}),
+                                         shift_row(D1, "L-1", "2直", 30, 0.3, {})])
+        write_day(self.root, "L-1", D2, [shift_row(D2, "L-1", "1直", 20, 0.2, {})])
+        user_settings.save(config.KEY_AGG_ROOT, str(self.root))
+
+    def test_parse_is_lenient_and_reports_problems(self):
+        from graphapp import line_target
+        t = line_target.parse("# 覚え書き\nL-1,12\nＬＶＣ，１１９\n機側\t100\nL-2,abc\nL1,15\n", source="x")
+        self.assertEqual(t.of("l-1"), 15)            # 後の行を使う(揺れは吸収)
+        self.assertEqual(t.of("LVC"), 119)
+        self.assertEqual(t.of("機側"), 100)
+        reasons = [p["reason"] for p in t.problems]
+        self.assertTrue(any("数字として読めません" in r for r in reasons))
+        self.assertTrue(any("2行目にもあります" in r for r in reasons))
+
+    def test_combo_cumulative_and_45_degree_target(self):
+        csv_path = self.tmp / "ライン毎目標.csv"
+        csv_path.write_text("L-1,60\n", encoding="utf-8")
+        user_settings.save(config.KEY_LINE_TARGET_FILE, str(self.tmp))       # フォルダでもよい
+        body = dashboard.graph({"metric": "sheets", "chart": "combo", "start": "2026-11-02", "end": "2026-11-05",
+                                "lines": ["L-1"], "combo": {"bars": "stacked", "line": "cumulative"}})
+        r = body["lines"][0]["result"]
+        self.assertEqual([s["name"] for s in r["series"]], ["1直合計", "2直合計"])
+        over = {o["kind"]: o["values"] for o in r["overlays"]}
+        self.assertEqual(over["cumulative"], [80, 100, 100, 100])             # データの無い日は横ばい
+        self.assertEqual(over["target"], [60, 120, 120, 120])                 # 目標 × データのある日数
+
+    def test_target_missing_is_explained_not_silent(self):
+        body = dashboard.graph({"metric": "sheets", "chart": "combo", "start": "2026-11-02", "end": "2026-11-03",
+                                "lines": ["L-1"]})
+        r = body["lines"][0]["result"]
+        self.assertNotIn("target", [o["kind"] for o in r["overlays"]])
+        self.assertIn("決めていません", r["target_note"])
+
+    def test_combo_with_another_metric_on_right_axis(self):
+        body = dashboard.graph({"metric": "weight", "chart": "combo", "start": "2026-11-02", "end": "2026-11-03",
+                                "lines": ["L-1"], "combo": {"bars": "total", "line": "metric", "metric2": "rate"}})
+        r = body["lines"][0]["result"]
+        self.assertEqual(r["overlays"][0]["unit"], "%")
+        self.assertEqual(len(r["series"]), 1)
+
+    def test_ratio_cannot_be_combo_bars(self):
+        with self.assertRaises(dashboard.RequestError):
+            dashboard.graph({"metric": "rate", "chart": "combo", "start": "2026-11-02", "end": "2026-11-03"})

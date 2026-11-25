@@ -34,6 +34,8 @@ KEY_ACCESS_DB_FILE = "access_db_filename"
 KEY_LOG_DIR = "log_dir"
 #: ダッシュボードのCSV・画像の書き出し先(このアプリだけの鍵)
 KEY_EXPORT_DIR = "graph_export_dir"
+#: ライン毎目標のCSV(45度線)。all-tools と同じ鍵。ファイルかフォルダ(その下の ライン毎目標.csv)
+KEY_LINE_TARGET_FILE = "line_target_file"
 KEY_ADMIN_PASSWORD = "admin_password"
 
 DEFAULT_ACCESS_DB_FILE = "日報データ.sqlite3"
@@ -105,6 +107,12 @@ class _Settings:
     def log_dir(self) -> Path:
         configured = user_settings.text(KEY_LOG_DIR)
         return resolve_dir(configured) if configured else self.default_log_dir
+
+    @property
+    def line_target_path(self) -> Optional[Path]:
+        """ライン毎目標のCSV(またはそのフォルダ)。決めていなければ None(45度線を引かない)。"""
+        configured = user_settings.text(KEY_LINE_TARGET_FILE)
+        return resolve_dir(configured) if configured else None
 
     @property
     def export_dir(self) -> Path:

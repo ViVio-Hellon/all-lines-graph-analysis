@@ -32,9 +32,9 @@ from .agg_data import SHIFT_ORDER, DayData, ShiftRow
 
 MINUTES_PER_DAY = 1440
 
-CHARTS = ("bar", "hbar", "line", "stacked", "pie")
+CHARTS = ("bar", "hbar", "line", "stacked", "pie", "combo")
 CHART_LABELS = {"bar": "棒グラフ", "hbar": "横棒グラフ", "line": "折れ線グラフ",
-                "stacked": "積み上げ棒", "pie": "円グラフ"}
+                "stacked": "積み上げ棒", "pie": "円グラフ", "combo": "組み合わせ(棒+線)"}
 GRAINS = ("day", "week", "month", "year")
 GRAIN_LABELS = {"day": "日別", "week": "週別", "month": "月別", "year": "年別"}
 
@@ -61,10 +61,11 @@ class Metric:
         """{種類: 選べない理由}(空文字なら選べる)。"""
         if self.kind == "ratio":
             why = "率は足し合わせられないため、積み上げ・円にはできません"
-            return {"bar": "", "hbar": "", "line": "", "stacked": why, "pie": why}
+            return {"bar": "", "hbar": "", "line": "", "stacked": why, "pie": why,
+                    "combo": "組み合わせは量の項目(枚数・重量・時間など)を棒にします。率は「線に重ねる項目」で選べます"}
         if self.kind == "breakdown":
             return {"bar": "", "hbar": "", "line": "内訳は棒・積み上げ棒・円で表示します",
-                    "stacked": "", "pie": ""}
+                    "stacked": "", "pie": "", "combo": "内訳は組み合わせにできません"}
         return {c: "" for c in CHARTS}
 
     def to_dict(self) -> dict:
@@ -279,10 +280,12 @@ def compute(days: list[DayData], metric: Metric, start: date, end: date, grain: 
             vals = [_sum([b.get(s) for b in by_shift]) for s in names]
             return {"labels": names, "series": [{"name": metric.label, "values": vals}],
                     "days": days_count, "total": total, "mode": "category"}
-        if chart == "stacked":
-            series = [{"name": s, "values": [b.get(s) if b else None for b in by_shift]} for s in names]
-            return {"labels": labels, "series": series, "days": days_count, "total": total, "mode": "time"}
-        return {"labels": labels, "series": [{"name": shift or "全直", "values": totals}],
+        if chart in ("stacked", "combo_stacked"):
+            series = [{"name": f"{s}合計" if chart == "combo_stacked" else s,
+                       "values": [b.get(s) if b else None for b in by_shift]} for s in names]
+            return {"labels": labels, "series": series, "days": days_count, "total": total, "mode": "time",
+                    "totals": totals}
+        return {"labels": labels, "series": [{"name": shift or "全直", "values": totals}], "totals": totals,
                 "days": days_count, "total": total, "mode": "time"}
 
     # breakdown

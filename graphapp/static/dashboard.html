@@ -38,6 +38,9 @@
     </div>
     <div class="toolbar__group toolbar__group--end">
       <button class="btn btn--primary" type="button" id="add-graph">＋ グラフ追加</button>
+      <span class="auto" title="集計CSVが書き足されたら、開いたままのグラフにも1分ごとに出します">
+        <label><input type="checkbox" id="auto-on" checked> 自動更新(1分ごと)</label>
+        <span class="lead">最終 <span id="auto-at">-</span> <span id="auto-note"></span></span></span>
       <button class="btn" type="button" id="reload">データを読み直す</button>
       <button class="btn" type="button" id="export-csv">CSVに出す</button>
       <button class="btn" type="button" id="print">印刷・PDF</button>
@@ -79,6 +82,7 @@
   </section>
 
   <!-- グラフを置く盤 -->
+  <div class="switch-banner" id="switch-banner" hidden></div>
   <div class="print-head" id="print-head"></div>
   <div class="board" id="board" aria-label="グラフの盤"></div>
   <div class="empty" id="empty" hidden>
@@ -121,6 +125,18 @@
     <div class="field"><label class="field__label" for="dr-metric">データ項目</label><select id="dr-metric"></select>
       <span class="lead" id="dr-metric-note"></span></div>
     <div class="field"><span class="field__label">グラフの種類</span><div class="ctypes" id="dr-types"></div><span class="lead" id="dr-why"></span></div>
+
+    <div class="comboset" id="dr-combo" hidden>
+      <h3>組み合わせ</h3>
+      <div class="field"><label class="field__label" for="dr-combo-bars">棒(左の軸)</label>
+        <select id="dr-combo-bars"><option value="stacked">直ごとに積み上げる(1直・2直・3直)</option><option value="total">合計の棒</option></select></div>
+      <div class="field"><span class="field__label">線(右の軸)</span>
+        <label class="check"><input type="radio" name="dr-combo-line" value="cumulative"> 累計(日毎累計)</label>
+        <label class="check" id="dr-combo-target-row"><input type="checkbox" id="dr-combo-target"> 目標の45度線も引く(ライン毎目標のCSV)</label>
+        <label class="check"><input type="radio" name="dr-combo-line" value="metric"> 別の項目:</label>
+        <select id="dr-combo-metric2" aria-label="線に重ねる項目"></select>
+        <label class="check"><input type="radio" name="dr-combo-line" value="none"> 線なし</label></div>
+    </div>
 
     <h3>条件 <span class="lead">「共通」は画面上の共通条件に従います</span></h3>
     <div class="own" data-own="lines">

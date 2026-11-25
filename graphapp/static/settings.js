@@ -56,7 +56,18 @@ $("lock-pw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("lock
 $("lock-off").addEventListener("click", async () => { const r = await api("/api/admin/lock", {}); $("lock-msg").textContent = r.message; await load(); });
 
 /* ---------------- 参照設定 ---------------- */
+function targetHtml(row) {
+  const t = row.extra && row.extra.targets;
+  if (!t) return "";
+  const vals = Object.entries(t.values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)} 枚/日</td></tr>`).join("");
+  const probs = t.problems.map((p) => `<li>${p.line_no}行目「${esc(p.text)}」: ${esc(p.reason)}</li>`).join("");
+  return `<div class="scan">${t.error ? `<div class="path__err">${esc(t.error)}</div>` : ""}
+    ${vals ? `<table><thead><tr><th>ライン</th><th>目標(1日あたり)</th></tr></thead><tbody>${vals}</tbody></table>` : ""}
+    ${probs ? `<div class="path__err">読めなかった行(この行は線になりません):<ul>${probs}</ul></div>` : ""}
+    ${t.unmatched.length ? `<div class="lead">集計データに見つからないライン名: ${esc(t.unmatched.join("・"))}(書き方を確かめてください)</div>` : ""}</div>`;
+}
 function scanHtml(row) {
+  if (row.extra && row.extra.targets) return targetHtml(row);
   const scan = row.extra && row.extra.scan;
   if (!scan) return "";
   if (scan.error) return `<div class="path__err">${esc(scan.error)}</div>`;

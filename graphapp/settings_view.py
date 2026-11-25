@@ -51,6 +51,11 @@ SPECS: tuple[PathSpec, ...] = (
     PathSpec(config.KEY_ACCESS_DB_FILE, "共有の日報データのファイル名", GROUP_READ,
              "ふつうは決めなくて構いません。",
              config.DEFAULT_ACCESS_DB_FILE, protected=True, is_file=True),
+    PathSpec(config.KEY_LINE_TARGET_FILE, "ライン毎目標のCSV(45度線)", GROUP_READ,
+             "生産枚数のグラフに目標の45度線を引くときに読みます(日報管理ツールと同じ ライン毎目標.csv)。"
+             "ファイルを指しても、それが入っているフォルダを指してもかまいません。書き方は「L-1,120」を1行ずつ"
+             "(目標は1日あたりの枚数)。",
+             "空なら 45度線を引かない"),
     PathSpec(config.KEY_LOG_DIR, "ログの出力パス", GROUP_WRITE,
              "この下の all_lines_graph\\ に端末ごとのファイルで書きます。"
              "共有のフォルダにすると、どの端末のエラーも1か所で見られます。",
@@ -115,6 +120,8 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         target = s.access_dir
     elif spec.key == config.KEY_ACCESS_DB_FILE:
         target = s.access_db_path
+    elif spec.key == config.KEY_LINE_TARGET_FILE:
+        target = s.line_target_path
     elif spec.key == config.KEY_EXPORT_DIR:
         target = s.export_dir
     else:
@@ -133,6 +140,15 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         view.found_text, view.missing_text = "このフォルダがあります", "このフォルダがありません"
     if spec.key in (config.KEY_LOG_DIR, config.KEY_EXPORT_DIR) and not view.exists:
         view.missing_text = "このフォルダがありません(初めて書くときに作ります)"
+    if spec.key == config.KEY_LINE_TARGET_FILE and target is not None:
+        from . import line_target
+        csv_path = line_target.resolve(target)
+        view.resolved = str(csv_path)
+        view.exists, view.error = _exists(csv_path)
+        view.found_text, view.missing_text = "このファイルがあります", "このファイルがありません"
+        if view.exists:
+            t = line_target.load(target)
+            view.extra = {"targets": t.to_dict(agg_store.lines(config.SETTINGS.agg_roots()))}
     if spec.key in (config.KEY_AGG_ROOT, config.KEY_AGG_ROOT2) and view.exists:
         scan = agg_store.scan_root(target)
         view.extra = {"scan": scan.to_dict(), "example": agg_store.example_path(
