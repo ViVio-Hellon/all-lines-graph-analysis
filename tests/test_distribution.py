@@ -113,3 +113,64 @@ class DistributionTest(TempEnv):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DashboardDistributionTest(TempEnv):
+    CFG = {"charts": [{"id": "a", "metric": "weight", "chart": "bar", "own": {"lines": ["L-1"]}}]}
+    CFG2 = {"charts": [{"id": "a", "metric": "sheets", "chart": "combo"}]}
+
+    def _fresh_terminal(self):
+        from graphapp import dash_store
+        user_settings.path().unlink(missing_ok=True)
+        dash_store.path().unlink()
+
+    def _export(self):
+        r = distribution.export(config.DEFAULT_ADMIN_PASSWORD, [distribution.ITEM_DASHBOARDS], admin=True)
+        self.assertTrue(r.ok, r.message)
+        return r
+
+    def test_exported_and_imported_on_fresh_terminal(self):
+        from graphapp import dash_store
+        dash_store.create("朝会", self.CFG)
+        r = self._export()
+        self.assertIn("ダッシュボード1件", r.applied)
+        self.assertTrue((distribution.folder() / distribution.DASH_FILE).is_file())
+        self.assertIn("朝会", distribution.summary()["contents"][-1]["value"])
+        self._fresh_terminal()
+        res = distribution.apply_on_start()
+        self.assertEqual(res.applied, ["ダッシュボード「朝会」"])
+        got = dash_store.find_by_name("朝会")
+        self.assertEqual(got["config"]["charts"][0]["own"], {"lines": ["L-1"]})
+
+    def test_redistributed_replaces_untouched_but_keeps_edited(self):
+        from graphapp import dash_store
+        dash_store.create("朝会", self.CFG)
+        dash_store.create("夕会", self.CFG)
+        self._export()
+        self._fresh_terminal()
+        distribution.apply_on_start()
+        # この端末で「夕会」だけ直す
+        mine = dash_store.find_by_name("夕会")
+        dash_store.save(mine["id"], {"charts": []})
+        dash_store.create("この端末だけ", self.CFG)
+        # 配るもとで両方を新しい中身にして配り直す(配布設定のファイルを書き換えて真似る)
+        path = distribution.folder() / distribution.DASH_FILE
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for d in data["dashboards"]:
+            d["config"] = self.CFG2
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        res = distribution.apply_on_start()
+        self.assertEqual(res.applied, ["ダッシュボード「朝会」"])
+        self.assertEqual(res.kept, ["ダッシュボード「夕会」"])
+        self.assertEqual(dash_store.find_by_name("朝会")["config"]["charts"][0]["chart"], "combo")
+        self.assertEqual(dash_store.find_by_name("夕会")["config"]["charts"], [])
+        self.assertIsNotNone(dash_store.find_by_name("この端末だけ"))     # 消さない
+        # 読み込み直す: この端末で直したものも上書き
+        res = distribution.reapply(config.DEFAULT_ADMIN_PASSWORD)
+        self.assertIn("ダッシュボード「夕会」", res.applied)
+        self.assertEqual(dash_store.find_by_name("夕会")["config"]["charts"][0]["chart"], "combo")
+
+    def test_nothing_saved_is_explained(self):
+        r = distribution.export(config.DEFAULT_ADMIN_PASSWORD, [distribution.ITEM_DASHBOARDS], admin=True)
+        self.assertFalse(r.ok)
+        self.assertIn("保存したものがありません", r.message)

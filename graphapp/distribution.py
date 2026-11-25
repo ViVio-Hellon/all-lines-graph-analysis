@@ -44,6 +44,11 @@ from .logging_setup import get_logger, note
 log = get_logger("distribution")
 
 DIR_NAME = "配布設定"
+#: 保存したダッシュボード(名前と構成)。設定.json とは別のファイル
+DASH_FILE = "ダッシュボード.json"
+ITEM_DASHBOARDS = "dashboards"
+#: 配布設定から取り込んだダッシュボードの指紋({名前: 指紋})。この端末で直したかを見分ける
+KEY_DASH_FROM = "distribution_dashboards"
 SETTINGS_NAME = "設定.json"
 README_NAME = "はじめに読む.txt"
 LAUNCHERS: tuple[str, ...] = ("Start.vbs", "start.bat")
@@ -80,9 +85,11 @@ ITEMS: tuple[Item, ...] = (
     Item(config.KEY_LOG_DIR, "ログの出力パス"),
     Item(config.KEY_EXPORT_DIR, "CSV・画像の書き出し先"),
     Item(config.KEY_ADMIN_PASSWORD, "管理者パスワード"),
+    # 組んだダッシュボード(この端末に保存したもの全部)。配った先で同じ画面を使える
+    Item(ITEM_DASHBOARDS, "ダッシュボード(この端末に保存したもの全部)"),
 )
 ITEM_BY_KEY = {item.key: item for item in ITEMS}
-SETTING_KEYS = frozenset(ITEM_BY_KEY)
+SETTING_KEYS = frozenset(k for k in ITEM_BY_KEY if k != ITEM_DASHBOARDS)
 
 
 # ----------------------------------------------------------------------
@@ -104,6 +111,7 @@ def settings_path(base: Optional[Path] = None) -> Path:
 @dataclass
 class Bundle:
     settings: dict[str, Any]
+    dashboards: list[dict] = field(default_factory=list)
     created_at: str = ""
     created_on: str = ""
     version: str = ""
@@ -132,7 +140,16 @@ def _read() -> tuple[Optional[Bundle], str]:
     if data.get(APP_KEY) not in (None, app_config.APP_ID):
         return None, (f"別のアプリの配布設定です({path}: {data.get(APP_KEY)})。"
                       f"{app_config.DISPLAY_NAME}の設定画面で書き出し直してください")
-    return Bundle(settings=_clean(data.get("settings")),
+    dashboards: list[dict] = []
+    try:
+        raw = json.loads((path.parent / DASH_FILE).read_text(encoding="utf-8-sig"))
+        dashboards = [d for d in (raw.get("dashboards") if isinstance(raw, dict) else []) or []
+                      if isinstance(d, dict) and str(d.get("name") or "").strip() and isinstance(d.get("config"), dict)]
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as exc:
+        return None, f"配布設定のダッシュボードを読めません({path.parent / DASH_FILE}): {exc}"
+    return Bundle(settings=_clean(data.get("settings")), dashboards=dashboards,
                   created_at=str(data.get("created_at", "")),
                   created_on=str(data.get("created_on", "")),
                   version=str(data.get("version", "")), file=path), ""
@@ -145,8 +162,20 @@ def _show(key: str, value: Any) -> str:
 
 
 def contents(bundle: Bundle) -> list[dict[str, str]]:
-    return [{"key": item.key, "label": item.label, "value": _show(item.key, bundle.settings[item.key])}
+    rows = [{"key": item.key, "label": item.label, "value": _show(item.key, bundle.settings[item.key])}
             for item in ITEMS if item.key in bundle.settings]
+    if bundle.dashboards:
+        rows.append({"key": ITEM_DASHBOARDS, "label": "ダッシュボード",
+                     "value": f"{len(bundle.dashboards)}件(" + "・".join(d["name"] for d in bundle.dashboards) + ")"})
+    return rows
+
+
+def _local_dashboards() -> list[dict]:
+    from . import dash_store
+    try:
+        return dash_store.list_all()
+    except Exception:  # 読めなくても配布設定の画面は出す
+        return []
 
 
 def _now() -> str:
@@ -170,9 +199,17 @@ def summary() -> dict[str, Any]:
     stamp = current.get(KEY_APPLIED)
     items = []
     for item in ITEMS:
+        if item.key == ITEM_DASHBOARDS:
+            local = _local_dashboards()
+            items.append({"key": item.key, "label": item.label, "default": item.default,
+                          "value": (f"{len(local)}件(" + "・".join(d["name"] for d in local) + ")") if local else ""})
+            continue
         value = current.get(item.key)
         items.append({"key": item.key, "label": item.label, "default": item.default,
                       "value": _show(item.key, value) if user_settings.is_set(value) else ""})
+    dash_came = current.get(KEY_DASH_FROM) if isinstance(current.get(KEY_DASH_FROM), dict) else {}
+    if dash_came:
+        applied.append(f"ダッシュボード{len(dash_came)}件(" + "・".join(dash_came) + ")")
     return {
         "path": str(folder()),
         "launchers": list(LAUNCHERS),
@@ -242,7 +279,7 @@ def export(password: str, items: list[str], *, admin: bool = False) -> Result:
     refused = _refusal(password, admin, "配布設定を書き出す")
     if refused is not None:
         return refused
-    unknown = [k for k in items if k not in SETTING_KEYS]
+    unknown = [k for k in items if k not in ITEM_BY_KEY]
     if unknown:
         return Result(False, "知らない項目です: " + ", ".join(unknown), REFUSE_BAD_INPUT)
     if not items:
@@ -255,12 +292,23 @@ def export(password: str, items: list[str], *, admin: bool = False) -> Result:
     settings: dict[str, Any] = {}
     defaults: list[str] = []
     for key in items:
+        if key == ITEM_DASHBOARDS:
+            continue
         value = current.get(key)
         if user_settings.is_set(value):
             settings[key] = value
         else:
             defaults.append(ITEM_BY_KEY[key].label)
-    if not settings:
+    dashboards: list[dict] = []
+    if ITEM_DASHBOARDS in items:
+        from . import dash_store
+        try:
+            dashboards = dash_store.export_all()
+        except Exception as exc:
+            return Result(False, f"ダッシュボードを読めないので、書き出しませんでした: {exc}", REFUSE_FAILED)
+        if not dashboards:
+            defaults.append("ダッシュボード(保存したものがありません)")
+    if not settings and not dashboards:
         return Result(False, "書き出せる設定がありません(" + "・".join(defaults)
                       + " はこの端末で変えていないため既定のままです)。", REFUSE_NOTHING)
 
@@ -275,7 +323,11 @@ def export(password: str, items: list[str], *, admin: bool = False) -> Result:
         staging.mkdir(parents=True)
         settings_path(staging).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
                                           encoding="utf-8")
-        (staging / README_NAME).write_text(_readme(meta), encoding="utf-8-sig")
+        if dashboards:
+            (staging / DASH_FILE).write_text(json.dumps({"format": FORMAT, APP_KEY: app_config.APP_ID,
+                                                         "dashboards": dashboards}, ensure_ascii=False, indent=2) + "\n",
+                                             encoding="utf-8")
+        (staging / README_NAME).write_text(_readme(meta, dashboards), encoding="utf-8-sig")
         if target.exists():
             shutil.rmtree(target)
         staging.rename(target)
@@ -283,6 +335,8 @@ def export(password: str, items: list[str], *, admin: bool = False) -> Result:
         shutil.rmtree(staging, ignore_errors=True)
         return Result(False, f"{target} に書けませんでした: {exc}", REFUSE_FAILED)
     names = [ITEM_BY_KEY[k].label for k in settings]
+    if dashboards:
+        names.append(f"ダッシュボード{len(dashboards)}件")
     message = (f"配布設定を書き出しました({len(names)}項目)。起動用の Start.vbs と同じフォルダの"
                f"「{target.name}」に入っています({target})。フォルダごと配ってください。")
     if defaults:
@@ -291,11 +345,11 @@ def export(password: str, items: list[str], *, admin: bool = False) -> Result:
     return Result(True, message, applied=names)
 
 
-def _readme(meta: dict[str, Any]) -> str:
+def _readme(meta: dict[str, Any], dashboards: Optional[list[dict]] = None) -> str:
     lines = [f"{app_config.DISPLAY_NAME} 配布設定", "",
              f"作成: {meta['created_at']}({meta['created_on']}) 版 {meta['version']}", "",
              "このフォルダに入っているもの"]
-    for row in contents(Bundle(settings=meta["settings"])):
+    for row in contents(Bundle(settings=meta["settings"], dashboards=dashboards or [])):
         lines.append(f"  {row['label']}: {row['value']}")
     lines += ["", "置き場所",
               "  起動用の Start.vbs / start.bat と同じフォルダに置いたままにしてください。", "",
@@ -356,6 +410,7 @@ def _apply(bundle: Bundle, *, overwrite: bool) -> Result:
             continue
         to_write[item.key] = new
         result.applied.append(item.label)
+    _apply_dashboards(bundle, current, overwrite, result, to_write)
     final = {**current, **to_write}
     remembered = {k: v for k, v in came.items() if final.get(k) == v}
     remembered.update(to_write)
@@ -368,6 +423,48 @@ def _apply(bundle: Bundle, *, overwrite: bool) -> Result:
         result.error = "配布設定を、この端末の設定ファイルに書けませんでした(" + user_settings.last_problem() + ")"
         result.applied = []
     return result
+
+
+def _apply_dashboards(bundle: Bundle, current: dict[str, Any], overwrite: bool, result: Result,
+                      to_write: dict[str, Any]) -> None:
+    """配られたダッシュボードを取り込む。決まりは設定と同じ:
+
+        この端末に同じ名前が無い                  → 取り込む
+        ある・配布設定から取り込んだまま直していない → 配り直した中身に置き換える
+        ある・この端末で作った/直した             → そのまま(読み込み直す ときだけ上書き)
+    この端末にだけあるダッシュボードは消さない。
+    """
+    if not bundle.dashboards:
+        return
+    from . import dash_store
+
+    came = current.get(KEY_DASH_FROM) if isinstance(current.get(KEY_DASH_FROM), dict) else {}
+    remembered = dict(came)
+    for d in bundle.dashboards:
+        name = str(d["name"]).strip()
+        new_fp = dash_store.fingerprint(d["config"])
+        try:
+            local = dash_store.find_by_name(name)
+            if local is None:
+                dash_store.create(name, d["config"])
+                result.applied.append(f"ダッシュボード「{name}」")
+            else:
+                local_fp = dash_store.fingerprint(local["config"])
+                if local_fp == new_fp:
+                    pass                                   # もう同じ
+                elif overwrite or came.get(name) == local_fp:
+                    dash_store.save(local["id"], d["config"])
+                    result.applied.append(f"ダッシュボード「{name}」")
+                else:
+                    result.kept.append(f"ダッシュボード「{name}」")
+                    remembered.pop(name, None)
+                    continue
+            remembered[name] = new_fp
+        except Exception as exc:                      # 1つ取り込めなくても、ほかは続ける
+            log.warning("配布設定のダッシュボード「%s」を取り込めませんでした: %s", name, exc)
+            result.kept.append(f"ダッシュボード「{name}」(取り込めませんでした: {exc})")
+    if remembered != came:
+        to_write[KEY_DASH_FROM] = remembered
 
 
 def apply_on_start() -> Result:

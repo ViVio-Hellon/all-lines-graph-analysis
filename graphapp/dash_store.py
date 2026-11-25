@@ -243,6 +243,25 @@ def delete(dash_id: int) -> None:
         con.execute("DELETE FROM dashboards WHERE id = ?", (dash_id,))
 
 
+def find_by_name(name: str) -> Optional[dict]:
+    """名前で1つ(配布設定の読み込み用)。無ければ None。"""
+    with _db() as con:
+        row = con.execute("SELECT * FROM dashboards WHERE name = ?", (str(name),)).fetchone()
+    return _row(row) if row is not None else None
+
+
+def fingerprint(config: Any) -> str:
+    """構成の指紋(形をそろえてから)。配布設定から取り込んだままか見分けるのに使う。"""
+    import hashlib
+    text = json.dumps(normalize(config), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def export_all() -> list[dict]:
+    """配布設定に入れる形(名前と構成だけ。番号・日時は配った先で付け直す)。"""
+    return [{"name": d["name"], "config": get(d["id"])["config"]} for d in list_all()]
+
+
 def last_opened() -> Optional[int]:
     with _db() as con:
         row = con.execute("SELECT value FROM meta WHERE key='last_opened'").fetchone()
