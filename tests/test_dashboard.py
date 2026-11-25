@@ -274,3 +274,22 @@ class TargetAndComboTest(TempEnv):
     def test_ratio_cannot_be_combo_bars(self):
         with self.assertRaises(dashboard.RequestError):
             dashboard.graph({"metric": "rate", "chart": "combo", "start": "2026-11-02", "end": "2026-11-03"})
+
+
+class LookTest(TempEnv):
+    def test_defaults_are_b_white_separator(self):
+        c = dash_store.normalize({})["common"]
+        self.assertEqual((c["palette"], c["marker"], c["separator"]), ("B", "white", True))
+
+    def test_choices_are_kept_and_unknown_falls_back(self):
+        c = dash_store.normalize({"common": {"palette": "A", "marker": "navy", "separator": False}})["common"]
+        self.assertEqual((c["palette"], c["marker"], c["separator"]), ("A", "navy", False))
+        c = dash_store.normalize({"common": {"palette": "Z", "marker": "red"}})["common"]
+        self.assertEqual((c["palette"], c["marker"]), ("B", "white"))
+
+    def test_keys_match_screen(self):
+        js = (Path(__file__).resolve().parent.parent / "graphapp" / "static" / "dashboard.js").read_text(encoding="utf-8")
+        for key in dash_store.PALETTES:
+            self.assertRegex(js, rf"\n  {key}: {{ label:")
+        for key in dash_store.MARKERS:
+            self.assertRegex(js, rf"{key}: {{ label:")

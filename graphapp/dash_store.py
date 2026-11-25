@@ -68,6 +68,9 @@ def _now() -> str:
 # 形をそろえる
 # ----------------------------------------------------------------------
 GRID_COLUMNS = 12
+#: 直の配色と印の色の選び方(画面 dashboard.js の PALETTES / MARKERS と同じ鍵)
+PALETTES = ("A", "B", "C", "excel")
+MARKERS = ("white", "navy", "purple")
 
 
 def _int(value: Any, default: int, low: int, high: int) -> int:
@@ -103,6 +106,11 @@ def normalize(config: Any) -> dict:
         "current": str(common.get("current") or ""),
         # 自動で読み直す(集計CSVが書き足されたら、開いたままのグラフにも出す)
         "auto_refresh": bool(common.get("auto_refresh", True)),
+        # 見た目: 直の配色(A 紫・シアン・オレンジ / B 青・オレンジ・緑 / C ピンク・水色・黄色 / excel)・
+        # 日毎累計の印の色・積み上げの段の間の区切り線。既定は B・白・あり
+        "palette": common.get("palette") if common.get("palette") in PALETTES else "B",
+        "marker": common.get("marker") if common.get("marker") in MARKERS else "white",
+        "separator": bool(common.get("separator", True)),
     }
     charts = []
     for raw in c.get("charts") or []:

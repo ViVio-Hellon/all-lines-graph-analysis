@@ -22,7 +22,20 @@ const CACHE = new Map();  // 条件 → 取得結果
 // ラインの色は原則統一(どのグラフでも同じラインは同じ色)
 const LINE_COLORS = ["#2f6fd6", "#d9792b", "#2e9a5b", "#b8434c", "#7a55c7", "#1f9aa8", "#b38a1d", "#c2548f", "#4f6b8a", "#6f9d2b", "#995c3c", "#3e8fd6"];
 // 直の色は日報管理ツール・Excel のグラフ(1直=青・2直=橙・3直=灰)に合わせる
-const SHIFT_COLORS = { "1直": "#4472c4", "2直": "#ed7d31", "3直": "#a5a5a5", "日勤": "#8a5cc9", "4直": "#1f9aa8", "5直": "#b38a1d" };
+// 直の配色(共通条件の「配色」で選ぶ。既定は B)。日勤・4直・5直はどの案でも同じ
+const PALETTES = {
+  A: { label: "A 紫・シアン・オレンジ", c: ["#8b5cf6", "#06b6d4", "#f97316"] },
+  B: { label: "B 青・オレンジ・緑", c: ["#3b82f6", "#f97316", "#22c55e"] },
+  C: { label: "C ピンク・水色・黄色", c: ["#ec4899", "#38bdf8", "#facc15"] },
+  excel: { label: "Excel と同じ(青・橙・灰)", c: ["#4472c4", "#ed7d31", "#a5a5a5"] },
+};
+// 日毎累計の印の色。白は縁を濃くして、白い地でも棒の上でも見えるようにする
+const MARKERS = { white: { label: "白", fill: "#ffffff", stroke: "#1f2937" }, navy: { label: "濃い紺", fill: "#1e2a4a" }, purple: { label: "紫(前の色)", fill: "#7a3fb0" } };
+const OTHER_SHIFTS = { "日勤": "#8a5cc9", "4直": "#1f9aa8", "5直": "#b38a1d" };
+function shiftColors() {
+  const p = (PALETTES[DASH && C().common.palette] || PALETTES.B).c;
+  return Object.assign({ "1直": p[0], "2直": p[1], "3直": p[2] }, OTHER_SHIFTS);
+}
 const KIND_COLORS = { "管理ロス設備停止": "#4f6b8a", "段取り・突発停止": "#d9542b", "ハンドリング停止": "#d9a52b", "その他停止": "#9aa3b1" };
 const CAT_COLORS = ["#2f6fd6", "#d9792b", "#2e9a5b", "#b8434c", "#7a55c7", "#1f9aa8", "#b38a1d", "#c2548f", "#9aa3b1"];
 const lineColor = (line) => LINE_COLORS[Math.max(0, (META?.lines || []).indexOf(line)) % LINE_COLORS.length];
@@ -80,7 +93,7 @@ function defaultConfig() {
   return {
     version: 1,
     common: { all_lines: true, lines: [], period: { preset: "this_month", start: "", end: "" }, grain: "day", shift: "",
-              switch: false, current: "", auto_refresh: true },
+              switch: false, current: "", auto_refresh: true, palette: "B", marker: "white", separator: true },
     charts: [
       pin(newChart("weight", "bar", 0, 0, 4, 5), 0),
       pin(newChart("rate", "line", 4, 0, 4, 5), 1),
@@ -177,6 +190,11 @@ function renderCommon() {
   if (now) $("switch-banner").innerHTML = `<span class="chip__dot" style="background:${lineColor(now)}"></span><b>${esc(now)}</b> だけを表示しています`
     + `<button class="btn btn--sm" type="button" data-view-off>すべて並べる表示に戻す</button>`;
   $("auto-on").checked = c.auto_refresh !== false;
+  fillSelect($("c-palette"), Object.entries(PALETTES).map(([k, v]) => [k, v.label]), c.palette || "B");
+  fillSelect($("c-marker"), Object.entries(MARKERS).map(([k, v]) => [k, v.label]), c.marker || "white");
+  $("c-sep").checked = c.separator !== false;
+  const pc = (PALETTES[c.palette] || PALETTES.B).c;
+  $("c-palette-sw").innerHTML = ["1直", "2直", "3直"].map((s, i) => `<span><i style="background:${pc[i]}"></i>${s}</span>`).join("");
   fillSelect($("c-preset"), PRESETS, c.period.preset);
   const r = resolvePeriod(c.period);
   $("c-start").value = r.start; $("c-end").value = r.end;
@@ -202,6 +220,9 @@ document.addEventListener("keydown", (e) => {
   c.current = picked[(i + (e.key === "ArrowRight" ? 1 : picked.length - 1)) % picked.length];
   changed(true);
 });
+$("c-palette").onchange = () => { C().common.palette = $("c-palette").value; changed(true); };
+$("c-marker").onchange = () => { C().common.marker = $("c-marker").value; changed(true); };
+$("c-sep").onchange = () => { C().common.separator = $("c-sep").checked; changed(true); };
 $("c-grain").onchange = () => { C().common.grain = $("c-grain").value; changed(true); };
 $("c-shift").onchange = () => { C().common.shift = $("c-shift").value; changed(true); };
 
@@ -348,7 +369,8 @@ function colorsFor(g, line, result) {
   const names = result.mode === "category" && g.chart === "pie" ? result.labels : result.series.map((s) => s.name);
   if (g.chart === "pie" || g.chart === "stacked" || g.chart === "combo") {
     if (g.chart === "combo" && result.series.length === 1) return [g.style.color || lineColor(line)];
-    return names.map((n, i) => SHIFT_COLORS[n] || SHIFT_COLORS[String(n).replace(/合計$/, "")] || KIND_COLORS[n] || CAT_COLORS[i % CAT_COLORS.length]);
+    const SC = shiftColors();
+    return names.map((n, i) => SC[n] || SC[String(n).replace(/合計$/, "")] || KIND_COLORS[n] || CAT_COLORS[i % CAT_COLORS.length]);
   }
   if (m.kind === "breakdown" || result.series.length > 1) return names.map((n, i) => CAT_COLORS[i % CAT_COLORS.length]);
   return [g.style.color || lineColor(line)];
@@ -405,7 +427,9 @@ async function loadCard(card, g) {
       stackBars: g.chart === "combo" && g.combo.bars === "stacked",
       overlays: (it.result.overlays || []).map((o) => Object.assign({}, o, {
         color: o.kind === "target" ? "#e0201b" : o.kind === "cumulative" ? "#f2b705" : "#2b2f8f",
-        marker: o.kind === "cumulative" ? "#7a3fb0" : undefined })),
+        marker: o.kind === "cumulative" ? (MARKERS[C().common.marker] || MARKERS.white).fill : undefined,
+        markerStroke: o.kind === "cumulative" ? (MARKERS[C().common.marker] || MARKERS.white).stroke : undefined })),
+      separator: C().common.separator !== false && (g.chart === "stacked" || (g.chart === "combo" && g.combo.bars === "stacked")),
       colors: colorsFor(g, it.line, it.result), legend: g.style.legend, showValues: g.style.labels,
       yMin: typeof g.style.y_min === "number" ? g.style.y_min : undefined,
       yMax: typeof g.style.y_max === "number" ? g.style.y_max : undefined, scaleMax,

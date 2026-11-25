@@ -74,7 +74,11 @@
     for (const it of items) {
       const w = 16 + it.name.length * 11 + 12;
       if (cx + w > x + maxW && cx > x) { cx = x; cy += 16; }
-      if (it.line) el("rect", { x: cx - 2, y: cy - 5, width: 14, height: 3, rx: 1, fill: it.color }, svg);
+      if (it.line) {
+        el("rect", { x: cx - 2, y: cy - 5, width: 14, height: 3, rx: 1, fill: it.color }, svg);
+        if (it.marker) el("rect", { x: cx + 1.5, y: cy - 7.5, width: 7, height: 7, rx: 1.5, fill: it.marker,
+                                    stroke: it.markerStroke || null, "stroke-width": it.markerStroke ? 1 : null }, svg);
+      }
       else el("rect", { x: cx, y: cy - 9, width: 10, height: 10, rx: 2, fill: it.color }, svg);
       text(svg, cx + 14, cy, it.name, { "font-size": 11 });
       cx += w;
@@ -114,10 +118,12 @@
     const combo = opts.type === "combo";
     const overlays = combo ? (opts.overlays || []).filter((o) => o.values.some((v) => v !== null && v !== undefined)) : [];
     if (combo) opts = Object.assign({}, opts, { type: opts.stackBars ? "stacked" : "bar" });
+    // 凡例: 累計の線の印も凡例に出す(グラフと同じ色)
     const showLegend = opts.legend && (opts.series.length > 1 || overlays.length);
     let legendH = 0;
     if (showLegend) legendH = legend(svg, opts.series.map((s, i) => ({ name: s.name, color: colors[i % colors.length] }))
-      .concat(overlays.map((o) => ({ name: o.name, color: o.color, line: true }))), 8, 14, W - 16) + 4;
+      .concat(overlays.map((o) => ({ name: o.name, color: o.color, line: true,
+        marker: o.kind !== "target" ? (o.marker || null) : null, markerStroke: o.markerStroke }))), 8, 14, W - 16) + 4;
 
     const horizontal = opts.type === "hbar";
     const { sc, any } = axes(opts, horizontal ? W - 60 : H - legendH - (opts.unit ? 20 : 10) - 34);
@@ -223,7 +229,10 @@
         let y1, y2, x = x0;
         if (opts.type === "stacked") { y1 = y(base + v); y2 = y(base); base += v; }
         else { x = x0 + si * bw; y1 = y(Math.max(v, 0)); y2 = y(Math.min(v, 0)); }
-        const r = el("rect", { x, y: Math.min(y1, y2), width: bw, height: Math.max(v === 0 ? 0 : 1, Math.abs(y2 - y1)), fill: color }, svg);
+        // 区切り線: 段の間に地の色の細い線を引いて、隣り合う色がにじんで見えないようにする
+        const r = el("rect", { x, y: Math.min(y1, y2), width: bw, height: Math.max(v === 0 ? 0 : 1, Math.abs(y2 - y1)), fill: color,
+                               stroke: opts.separator && opts.type === "stacked" && bw > 3 ? css("--surface", "#fff") : null,
+                               "stroke-width": opts.separator && opts.type === "stacked" && bw > 3 ? 1.2 : null }, svg);
         tip(r, `${lab} ${s.name}: ${fmt(v, digits)} ${opts.unit || ""}`);
         if (opts.showValues && opts.type !== "stacked" && n <= 40) text(svg, x + bw / 2, Math.min(y1, y2) - 3, fmt(v, digits), { "text-anchor": "middle", "font-size": 9.5 });
       });
@@ -250,7 +259,8 @@
           o.values.forEach((v, i) => {
             if (v === null || v === undefined || (i > 0 && o.values[i - 1] === v && opts.series.every((s) => s.values[i] === null))) return;
             const c = el("rect", { x: left + band * i + band / 2 - 4, y: yr(v) - 4, width: 8, height: 8, rx: 2,
-                                    fill: o.marker || o.color }, svg);
+                                    fill: o.marker || o.color, stroke: o.markerStroke || null,
+                                    "stroke-width": o.markerStroke ? 1.2 : null }, svg);
             tip(c, `${opts.labels[i]} ${o.name}: ${fmt(v, o.digits || digits)} ${o.unit || ""}`);
           });
         } else {
