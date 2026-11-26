@@ -169,3 +169,5 @@
 .fbar i { display: block; height: 100%; background: var(--accent); }
 .fbar--done i { background: var(--ok); }
 @media print { .flash { display: none !important; } }
+.flash__pick { display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+.flash__pick.is-follow #flash-lines { opacity: .45; pointer-events: none; }

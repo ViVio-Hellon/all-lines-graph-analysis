@@ -113,6 +113,9 @@ def normalize(config: Any) -> dict:
         "separator": bool(common.get("separator", True)),
         # ライン速報の帯を出すか
         "flash": bool(common.get("flash", True)),
+        # 速報に出すライン: 共通条件に従う(既定)か、選んだラインだけ(配布設定のダッシュボードにも入る)
+        "flash_follow": bool(common.get("flash_follow", True)),
+        "flash_lines": _lines(common.get("flash_lines")),
     }
     charts = []
     for raw in c.get("charts") or []:

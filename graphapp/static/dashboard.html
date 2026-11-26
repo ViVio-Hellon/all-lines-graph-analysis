@@ -97,6 +97,12 @@
     <div class="flash__head"><b>ライン速報</b>
       <span class="lead">日報を保存するたびに日報管理ツールが書く、今の直・今日の枚数(30秒ごとに読み直す)</span>
       <span class="lead flash__at" id="flash-at"></span></div>
+    <div class="flash__pick">
+      <span class="field__label">出すライン</span>
+      <label class="check"><input type="radio" name="flash-mode" value="follow"> 共通条件に従う</label>
+      <label class="check"><input type="radio" name="flash-mode" value="pick"> ラインを選ぶ</label>
+      <div class="linepick" id="flash-lines"></div>
+    </div>
     <div class="flash__msg" id="flash-msg" hidden></div>
     <div class="flash__tiles" id="flash-tiles"></div>
   </section>

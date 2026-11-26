@@ -93,7 +93,8 @@ function defaultConfig() {
   return {
     version: 1,
     common: { all_lines: true, lines: [], period: { preset: "this_month", start: "", end: "" }, grain: "day", shift: "",
-              switch: false, current: "", auto_refresh: true, palette: "B", marker: "white", separator: true },
+              switch: false, current: "", auto_refresh: true, palette: "B", marker: "white", separator: true,
+              flash: true, flash_follow: true, flash_lines: [] },
     charts: [
       pin(newChart("weight", "bar", 0, 0, 4, 5), 0),
       pin(newChart("rate", "line", 4, 0, 4, 5), 1),
@@ -224,6 +225,12 @@ document.addEventListener("keydown", (e) => {
 $("c-palette").onchange = () => { C().common.palette = $("c-palette").value; changed(true); };
 $("c-marker").onchange = () => { C().common.marker = $("c-marker").value; changed(true); };
 $("c-sep").onchange = () => { C().common.separator = $("c-sep").checked; changed(true); };
+document.querySelectorAll('input[name="flash-mode"]').forEach((r) => r.addEventListener("change", () => {
+  const c = C().common;
+  c.flash_follow = r.value === "follow";
+  if (!c.flash_follow && !(c.flash_lines || []).length) c.flash_lines = (FLASH ? FLASH.items.map((it) => it.line) : []).filter((l) => commonLines().includes(l));
+  markDirty(); renderFlash();
+}));
 $("c-flash").onchange = () => { C().common.flash = $("c-flash").checked; markDirty(); renderFlash(); };
 
 /* ------------------------------------------------------------ ライン速報
@@ -245,12 +252,24 @@ function renderFlash() {
   $("flash-at").textContent = FLASH.read_at ? `読んだ時刻 ${FLASH.read_at.slice(11, 16)}` : "";
   const sw = switchedLine();
   const c = C().common;
-  const show = (line) => (sw ? line === sw : (c.all_lines || c.lines.includes(line)));
+  const follow = c.flash_follow !== false;
+  // 選んだラインは、共通条件・切り替え表示に関係なくそのラインだけ(ライン指定のカードと同じ考え)
+  const show = (line) => (!follow ? (c.flash_lines || []).includes(line)
+    : sw ? line === sw : (c.all_lines || c.lines.includes(line)));
+  document.querySelectorAll('input[name="flash-mode"]').forEach((r) => { r.checked = r.value === (follow ? "follow" : "pick"); });
+  document.querySelector(".flash__pick").classList.toggle("is-follow", follow);
+  const known = [...new Set([...META.lines, ...FLASH.items.map((it) => it.line)])];
+  const keep = META.lines; META.lines = known;               // 速報にしか無いラインも選べるように
+  linePicker($("flash-lines"), follow ? [] : (c.flash_lines || []), false, (all, picked) => {
+    C().common.flash_lines = picked; markDirty(); renderFlash();
+  }, false);
+  META.lines = keep;
   const items = FLASH.items.filter((it) => show(it.line));
   const errs = FLASH.items.filter((it) => it.error);
   $("flash-msg").hidden = !(FLASH.error || errs.length || !items.length);
   $("flash-msg").textContent = FLASH.error || (errs.length ? "読めない速報: " + errs.map((e) => `${e.line}(${e.error})`).join(" / ")
-    : "選んでいるラインの速報はまだありません(日報を保存すると出ます)");
+    : (c.flash_follow === false && !(c.flash_lines || []).length ? "出すラインを選んでください"
+       : "選んでいるラインの速報はまだありません(日報を保存すると出ます)"));
   items.sort((a, b) => META.lines.indexOf(a.line) - META.lines.indexOf(b.line));
   $("flash-tiles").innerHTML = items.filter((it) => !it.error).map((it) => {
     const shifts = Object.entries(it.shifts).map(([s, v]) => `${esc(s)} ${fnum(v)}`).join(" / ");

@@ -174,3 +174,21 @@ class DashboardDistributionTest(TempEnv):
         r = distribution.export(config.DEFAULT_ADMIN_PASSWORD, [distribution.ITEM_DASHBOARDS], admin=True)
         self.assertFalse(r.ok)
         self.assertIn("保存したものがありません", r.message)
+
+
+class FlashLinesDistributionTest(TempEnv):
+    def test_flash_line_choice_travels_with_dashboard(self):
+        from graphapp import dash_store
+        cfg = {"common": {"flash": True, "flash_follow": False, "flash_lines": ["L-1", "HVC"]}, "charts": []}
+        dash_store.create("事務所モニター", cfg)
+        self.assertTrue(distribution.export(config.DEFAULT_ADMIN_PASSWORD, [distribution.ITEM_DASHBOARDS], admin=True).ok)
+        user_settings.path().unlink(missing_ok=True)
+        dash_store.path().unlink()                       # まっさらな端末に見立てる
+        distribution.apply_on_start()
+        c = dash_store.find_by_name("事務所モニター")["config"]["common"]
+        self.assertEqual((c["flash"], c["flash_follow"], c["flash_lines"]), (True, False, ["L-1", "HVC"]))
+
+    def test_defaults_follow_common(self):
+        from graphapp import dash_store
+        c = dash_store.normalize({})["common"]
+        self.assertEqual((c["flash"], c["flash_follow"], c["flash_lines"]), (True, True, []))
