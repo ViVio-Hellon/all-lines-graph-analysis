@@ -36,6 +36,8 @@ KEY_LOG_DIR = "log_dir"
 KEY_EXPORT_DIR = "graph_export_dir"
 #: ライン毎目標のCSV(45度線)。all-tools と同じ鍵。ファイルかフォルダ(その下の ライン毎目標.csv)
 KEY_LINE_TARGET_FILE = "line_target_file"
+#: ライン速報の置き場所(all-tools と同じ鍵 flash_report_dir)。all-tools が <ライン>.json を書く
+KEY_FLASH_DIR = "flash_report_dir"
 KEY_ADMIN_PASSWORD = "admin_password"
 
 DEFAULT_ACCESS_DB_FILE = "日報データ.sqlite3"
@@ -112,6 +114,12 @@ class _Settings:
     def line_target_path(self) -> Optional[Path]:
         """ライン毎目標のCSV(またはそのフォルダ)。決めていなければ None(45度線を引かない)。"""
         configured = user_settings.text(KEY_LINE_TARGET_FILE)
+        return resolve_dir(configured) if configured else None
+
+    @property
+    def flash_report_dir(self) -> Optional[Path]:
+        """ライン速報の置き場所。決めていなければ None(ダッシュボードに出さない)。"""
+        configured = user_settings.text(KEY_FLASH_DIR)
         return resolve_dir(configured) if configured else None
 
     @property

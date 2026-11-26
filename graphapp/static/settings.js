@@ -66,8 +66,14 @@ function targetHtml(row) {
     ${probs ? `<div class="path__err">読めなかった行(この行は線になりません):<ul>${probs}</ul></div>` : ""}
     ${t.unmatched.length ? `<div class="lead">集計データに見つからないライン名: ${esc(t.unmatched.join("・"))}(書き方を確かめてください)</div>` : ""}</div>`;
 }
+function flashHtml(row) {
+  const f = row.extra.flash;
+  return `<div class="scan"><div class="lead">速報のファイル ${f.count}件${f.lines.length ? ": " + esc(f.lines.join("・")) : ""}</div>
+    ${f.errors.length ? `<div class="path__err">読めないファイル: ${esc(f.errors.join(" / "))}</div>` : ""}</div>`;
+}
 function scanHtml(row) {
   if (row.extra && row.extra.targets) return targetHtml(row);
+  if (row.extra && row.extra.flash) return flashHtml(row);
   const scan = row.extra && row.extra.scan;
   if (!scan) return "";
   if (scan.error) return `<div class="path__err">${esc(scan.error)}</div>`;

@@ -81,6 +81,7 @@ ITEMS: tuple[Item, ...] = (
     Item(config.KEY_ACCESS_DIR, "共有の日報データの置き場所"),
     Item(config.KEY_ACCESS_DB_FILE, "共有の日報データのファイル名"),
     Item(config.KEY_LINE_TARGET_FILE, "ライン毎目標のCSV"),
+    Item(config.KEY_FLASH_DIR, "ライン速報の置き場所"),
     # 共有のフォルダを配れば、どの端末のエラーも1か所で見られる
     Item(config.KEY_LOG_DIR, "ログの出力パス"),
     Item(config.KEY_EXPORT_DIR, "CSV・画像の書き出し先"),

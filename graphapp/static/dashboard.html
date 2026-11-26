@@ -84,6 +84,7 @@
           <span class="look__sw" id="c-palette-sw"></span>
           <label>累計の印 <select id="c-marker"></select></label>
           <label class="check"><input type="checkbox" id="c-sep"> 段の間に区切り線</label>
+          <label class="check"><input type="checkbox" id="c-flash"> ライン速報を出す</label>
         </div>
       </div>
     </div>
@@ -92,6 +93,13 @@
 
   <!-- グラフを置く盤 -->
   <div class="switch-banner" id="switch-banner" hidden></div>
+  <section class="flash" id="flash" hidden aria-label="ライン速報">
+    <div class="flash__head"><b>ライン速報</b>
+      <span class="lead">日報を保存するたびに日報管理ツールが書く、今の直・今日の枚数(30秒ごとに読み直す)</span>
+      <span class="lead flash__at" id="flash-at"></span></div>
+    <div class="flash__msg" id="flash-msg" hidden></div>
+    <div class="flash__tiles" id="flash-tiles"></div>
+  </section>
   <div class="print-head" id="print-head"></div>
   <div class="board" id="board" aria-label="グラフの盤"></div>
   <div class="empty" id="empty" hidden>

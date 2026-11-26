@@ -154,6 +154,9 @@ class Exchange:
                 return self._static("dashboard.html")
             if url.path == "/settings":
                 return self._static("settings.html")
+            if url.path == "/api/flash":
+                from . import flash_report
+                return self._json(flash_report.read_all(config.SETTINGS.flash_report_dir))
             if url.path == "/api/dash/meta":
                 return self._json(dashboard.meta())
             if url.path == "/api/dash/list":

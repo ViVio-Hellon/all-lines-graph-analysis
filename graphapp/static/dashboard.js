@@ -193,6 +193,7 @@ function renderCommon() {
   fillSelect($("c-palette"), Object.entries(PALETTES).map(([k, v]) => [k, v.label]), c.palette || "B");
   fillSelect($("c-marker"), Object.entries(MARKERS).map(([k, v]) => [k, v.label]), c.marker || "white");
   $("c-sep").checked = c.separator !== false;
+  $("c-flash").checked = c.flash !== false;
   const pc = (PALETTES[c.palette] || PALETTES.B).c;
   $("c-palette-sw").innerHTML = ["1直", "2直", "3直"].map((s, i) => `<span><i style="background:${pc[i]}"></i>${s}</span>`).join("");
   fillSelect($("c-preset"), PRESETS, c.period.preset);
@@ -223,12 +224,60 @@ document.addEventListener("keydown", (e) => {
 $("c-palette").onchange = () => { C().common.palette = $("c-palette").value; changed(true); };
 $("c-marker").onchange = () => { C().common.marker = $("c-marker").value; changed(true); };
 $("c-sep").onchange = () => { C().common.separator = $("c-sep").checked; changed(true); };
+$("c-flash").onchange = () => { C().common.flash = $("c-flash").checked; markDirty(); renderFlash(); };
+
+/* ------------------------------------------------------------ ライン速報
+ * 日報管理ツールが日報を保存するたびに書く <ライン>.json を読んで並べる(数は計算し直さない)。
+ * 出すラインは共通条件と同じ(切り替え表示ならそのラインだけ)。30秒ごとに読み直す */
+let FLASH = null;
+const fnum = (v) => (v === null || v === undefined ? "—" : ALGChart.fmt(v, 0));
+async function loadFlash() {
+  if (!DASH || C().common.flash === false || document.hidden) return;
+  FLASH = await api("/api/flash");
+  renderFlash();
+}
+function renderFlash() {
+  const box = $("flash");
+  const on = DASH && C().common.flash !== false;
+  // 置き場所を決めていない端末では帯ごと出さない(設定していない人に毎回言わない)
+  if (!on || !FLASH || (!FLASH.items.length && /決めていません/.test(FLASH.error || ""))) { box.hidden = true; return; }
+  box.hidden = false;
+  $("flash-at").textContent = FLASH.read_at ? `読んだ時刻 ${FLASH.read_at.slice(11, 16)}` : "";
+  const sw = switchedLine();
+  const c = C().common;
+  const show = (line) => (sw ? line === sw : (c.all_lines || c.lines.includes(line)));
+  const items = FLASH.items.filter((it) => show(it.line));
+  const errs = FLASH.items.filter((it) => it.error);
+  $("flash-msg").hidden = !(FLASH.error || errs.length || !items.length);
+  $("flash-msg").textContent = FLASH.error || (errs.length ? "読めない速報: " + errs.map((e) => `${e.line}(${e.error})`).join(" / ")
+    : "選んでいるラインの速報はまだありません(日報を保存すると出ます)");
+  items.sort((a, b) => META.lines.indexOf(a.line) - META.lines.indexOf(b.line));
+  $("flash-tiles").innerHTML = items.filter((it) => !it.error).map((it) => {
+    const shifts = Object.entries(it.shifts).map(([s, v]) => `${esc(s)} ${fnum(v)}`).join(" / ");
+    const pct = it.target ? Math.min(100, Math.round((it.day_total || 0) / it.target * 100)) : null;
+    const diff = it.diff === null ? "" : `<span class="ftile__diff--${it.diff >= 0 ? "plus" : "minus"}">${it.diff >= 0 ? "+" : ""}${fnum(it.diff)}</span>`;
+    const tag = !it.is_today ? `<span class="badge badge--todo" title="今日の速報はまだ届いていません">${esc(it.date)} の速報</span>`
+      : it.quiet ? `<span class="badge badge--todo" title="しばらく保存されていません">${it.minutes_ago}分 更新なし</span>`
+      : `<span class="badge badge--done">今日</span>`;
+    return `<div class="ftile ${it.is_today ? "" : "ftile--old"}">
+      <div class="ftile__top"><span class="chip__dot" style="background:${lineColor(it.line)}"></span>${esc(it.line)}${tag}</div>
+      <div class="ftile__total">${fnum(it.day_total)} <small>枚(${it.is_today ? "今日" : esc(it.date)}の合計)</small></div>
+      <div class="ftile__row"><span>今の直 <b>${esc(it.shift)}</b> ${fnum(it.shift_count)}枚</span></div>
+      <div class="ftile__row"><span>${shifts}</span></div>
+      ${it.target ? `<div class="fbar ${pct >= 100 ? "fbar--done" : ""}" title="目標に対して ${pct}%"><i style="width:${pct}%"></i></div>
+      <div class="ftile__row"><span>目標 ${fnum(it.target)}</span><span>差 ${diff}</span><span>${pct}%</span></div>` : `<div class="ftile__row"><span>目標なし(ライン毎目標)</span></div>`}
+      <div class="ftile__row"><span>保存 ${esc((it.updated_at || "").replace("T", " ").slice(5, 16))}${it.minutes_ago !== null ? `(${it.minutes_ago}分前)` : ""}</span></div>
+    </div>`;
+  }).join("");
+}
+setInterval(loadFlash, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadFlash(); });
 $("c-grain").onchange = () => { C().common.grain = $("c-grain").value; changed(true); };
 $("c-shift").onchange = () => { C().common.shift = $("c-shift").value; changed(true); };
 
 function changed(common) {
   markDirty();
-  if (common) renderCommon();
+  if (common) { renderCommon(); renderFlash(); }
   renderBoard();
   if (ACTIVE) openDrawer(ACTIVE);
 }
@@ -776,4 +825,5 @@ async function rootsNote() {
   else if ((list.items || []).length) await openDash(list.items[0].id);
   else use({ name: "新しいダッシュボード", config: defaultConfig() });
   markRefreshed();
+  loadFlash();
 })();

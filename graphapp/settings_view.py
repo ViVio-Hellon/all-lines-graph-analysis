@@ -56,6 +56,10 @@ SPECS: tuple[PathSpec, ...] = (
              "ファイルを指しても、それが入っているフォルダを指してもかまいません。書き方は「L-1,120」を1行ずつ"
              "(目標は1日あたりの枚数)。",
              "空なら 45度線を引かない"),
+    PathSpec(config.KEY_FLASH_DIR, "ライン速報の置き場所", GROUP_READ,
+             "日報管理ツールの「ライン速報の置き場所」と同じフォルダを指します。日報を保存するたびに "
+             "<ライン>.json が書かれ、ダッシュボードの「ライン速報」に今の直・今日の枚数が出ます。",
+             "空なら ライン速報を出さない"),
     PathSpec(config.KEY_LOG_DIR, "ログの出力パス", GROUP_WRITE,
              "この下の all_lines_graph\\ に端末ごとのファイルで書きます。"
              "共有のフォルダにすると、どの端末のエラーも1か所で見られます。",
@@ -122,6 +126,8 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         target = s.access_db_path
     elif spec.key == config.KEY_LINE_TARGET_FILE:
         target = s.line_target_path
+    elif spec.key == config.KEY_FLASH_DIR:
+        target = s.flash_report_dir
     elif spec.key == config.KEY_EXPORT_DIR:
         target = s.export_dir
     else:
@@ -149,6 +155,14 @@ def _view(spec: PathSpec, current: dict[str, Any], came: dict[str, Any]) -> Path
         if view.exists:
             t = line_target.load(target)
             view.extra = {"targets": t.to_dict(agg_store.lines(config.SETTINGS.agg_roots()))}
+    if spec.key == config.KEY_FLASH_DIR and target is not None and view.exists:
+        from . import flash_report
+        got = flash_report.read_all(target)
+        view.extra = {"flash": {"count": len(got["items"]),
+                                "lines": [f"{i['line']}({i.get('date', '')} {i.get('shift', '')})" for i in got["items"]],
+                                "errors": [f"{Path(i['file']).name}: {i['error']}" for i in got["items"] if i["error"]]}}
+        if not got["items"]:
+            view.found_text = "フォルダはありますが、まだ速報のファイルがありません(日報を保存すると書かれます)"
     if spec.key in (config.KEY_AGG_ROOT, config.KEY_AGG_ROOT2) and view.exists:
         scan = agg_store.scan_root(target)
         view.extra = {"scan": scan.to_dict(), "example": agg_store.example_path(

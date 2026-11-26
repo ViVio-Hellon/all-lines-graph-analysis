@@ -111,6 +111,8 @@ def normalize(config: Any) -> dict:
         "palette": common.get("palette") if common.get("palette") in PALETTES else "B",
         "marker": common.get("marker") if common.get("marker") in MARKERS else "white",
         "separator": bool(common.get("separator", True)),
+        # ライン速報の帯を出すか
+        "flash": bool(common.get("flash", True)),
     }
     charts = []
     for raw in c.get("charts") or []:
